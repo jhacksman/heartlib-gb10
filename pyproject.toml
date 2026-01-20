@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "heartlib"
 version = "0.1.0"
-description = "A Python Library."
+description = "A Python Library optimized for NVIDIA GB10 (DGX Spark)."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
@@ -14,11 +14,6 @@ authors = [
 ]
 dependencies = [
     "numpy==2.0.2",
-    "torch==2.4.1",
-    "torchaudio==2.4.1",
-    "torchtune==0.4.0",
-    "torchao==0.9.0",
-    "torchvision==0.19.1",
     "tqdm==4.67.1",
     "traitlets==5.7.1",
     "traittypes==0.2.3",
@@ -38,9 +33,27 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 
+[project.optional-dependencies]
+cuda = [
+    "torch==2.4.1+cu124",
+    "torchaudio==2.4.1+cu124",
+    "torchvision==0.19.1+cu124",
+    "torchtune==0.4.0",
+    "torchao==0.9.0"
+]
+cpu = [
+    "torch==2.4.1",
+    "torchaudio==2.4.1",
+    "torchvision==0.19.1",
+    "torchtune==0.4.0",
+    "torchao==0.9.0"
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.uv]
+extra-index-url = ["https://download.pytorch.org/whl/cu124"]
