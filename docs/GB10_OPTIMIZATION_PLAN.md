@@ -2,7 +2,9 @@
 
 ## Executive Summary
 
-This document outlines a comprehensive optimization strategy for running HeartMuLa (a 3B parameter music generation model) on the GB10 ARM64 board. The goal is to achieve maximum inference speed **without quantization**, focusing on parallelization, speculative decoding, and ARM64-specific optimizations.
+This document outlines a comprehensive optimization strategy for running HeartMuLa (a 3B parameter music generation model) on the GB10 (NVIDIA Grace Blackwell Superchip). The GB10 features a Blackwell GPU with 6,144 CUDA cores and 128GB unified memory, enabling GPU-accelerated inference with optional FP4 quantization for maximum throughput.
+
+**Primary optimization vectors**: speculative decoding, flow matching step reduction, and GPU Tensor Core utilization.
 
 ---
 
@@ -63,7 +65,7 @@ From GitHub Issue #14:
 - RTX 5080 (16GB): ~11 min for 5 seconds (severe VRAM bottleneck)
 - After PR #5 fix: ~5 min for 3 min song
 
-**GB10 Target**: Achieve sub-2x RTF on ARM64 without quantization.
+**GB10 Target**: Achieve ≤0.1 RTF (10x+ faster than real-time) using GPU Tensor Cores with optional FP4 quantization.
 
 ---
 
@@ -193,137 +195,137 @@ out = uncond_out + scale * (cond_out - uncond_out)
 
 ---
 
-## 4. ARM64-Specific Optimizations
+## 4. GB10 GPU Optimizations
 
-### 4.1 NEON SIMD Vectorization
+### 4.1 Blackwell Tensor Core Utilization
 
-**Source**: [arXiv:2506.10443](https://arxiv.org/abs/2506.10443) - MNN-LLM for ARM mobile deployment
+The GB10's Blackwell GPU has 5th Generation Tensor Cores optimized for transformer inference.
 
-#### 4.1.1 Target Operations
+#### 4.1.1 Precision Strategy
 
-| Operation | Current | ARM64 Optimization |
-|-----------|---------|-------------------|
-| MatMul | PyTorch default | ARM Compute Library / XNNPACK |
-| SiLU activation | Scalar | NEON vfmaq_f32 |
-| RMSNorm | Scalar | NEON reduction + rsqrt |
-| Softmax | Scalar | NEON exp + reduction |
-| Rotary embedding | Scalar | NEON sin/cos LUT |
+| Precision | Memory | Throughput | Use Case |
+|-----------|--------|------------|----------|
+| FP16 | ~8GB | Baseline | Quality-sensitive components |
+| FP8 | ~4GB | 2x | HeartMuLa backbone |
+| **FP4** | **~2GB** | **3-4x** | **Maximum throughput** |
 
-#### 4.1.2 Snake Activation (Already Optimized)
+**Recommendation**: Use FP4 for HeartMuLa LM components, FP16 for HeartCodec (quality-sensitive audio).
 
-The codec uses a Snake activation that's already TorchScript-optimized:
+#### 4.1.2 FlashAttention-3
+
+Blackwell supports FlashAttention-3 with:
+- Asynchronous softmax computation
+- FP8 accumulation
+- Improved SM occupancy
+
+Enable via: `torch.backends.cuda.enable_flash_sdp(True)`
+
+### 4.2 Unified Memory Architecture
+
+GB10's 128GB unified memory eliminates CPU-GPU transfer overhead:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              GB10 UNIFIED MEMORY ADVANTAGE                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Traditional GPU:                                            │
+│    CPU RAM ─────PCIe────→ GPU VRAM ─────→ Compute           │
+│              (bottleneck)                                    │
+│                                                              │
+│  GB10 (Grace Blackwell):                                    │
+│    Unified 128GB ──────────────────────→ Compute            │
+│              (no transfer needed)                            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Memory Budget** (HeartMuLa pipeline at FP4):
+- HeartMuLa 3B: ~1.5GB
+- HeartMuLa 300M decoder: ~0.15GB
+- HeartCodec (FP16): ~1.1GB
+- KV Cache (8K context): ~2GB
+- **Total: ~5GB** (123GB headroom)
+
+### 4.3 CUDA Graphs for Autoregressive Generation
+
+Eliminate kernel launch overhead in the generation loop:
 
 ```python
-@torch.jit.script
-def snake(x, alpha):
-    # 1.4x speedup from JIT
-    ...
+# Compile with CUDA graphs for autoregressive decoding
+model = torch.compile(model, mode="max-autotune", fullgraph=True)
 ```
 
-Extend this pattern to other custom ops.
-
-### 4.2 Memory Layout Optimization
-
-**Source**: MNN-LLM paper Section 4.2
-
-#### 4.2.1 Weight Rearrangement
-
-Rearrange weight matrices for ARM CPU cache efficiency:
-- Tile weights into 4x4 or 8x8 blocks for NEON register utilization
-- Interleave weights for vectorized FMA operations
-
-#### 4.2.2 Activation Memory
-
-- Use in-place operations where possible
-- Implement activation checkpointing for large sequences
-- Pre-allocate KV cache buffers
-
-### 4.3 Multi-Core Load Balancing
-
-GB10 has 8 ARM cores. Distribute work:
-
-```
-┌────────────────────────────────────────────────┐
-│              GB10 Core Allocation              │
-├────────────────────────────────────────────────┤
-│ Cores 0-5:  Transformer attention/FFN (6 cores)│
-│ Core 6:     KV cache management                │
-│ Core 7:     Memory prefetch + I/O              │
-└────────────────────────────────────────────────┘
-```
-
-Use OpenMP or similar for parallel attention head computation:
-- 24 attention heads ÷ 6 cores = 4 heads per core
+This is critical for HeartMuLa's frame-by-frame generation where kernel launch overhead dominates.
 
 ---
 
 ## 5. Framework Recommendations
 
-### 5.1 Primary: MNN Framework
+### 5.1 Primary: TensorRT-LLM
 
-**Why**: Purpose-built for ARM LLM inference with NEON optimization
+**Why**: NVIDIA's official LLM inference engine, optimized for Blackwell
 
-- Pre-built ARM NEON kernels
-- Mixed-precision support (FP32/FP16/BF16)
-- DRAM-Flash hybrid for memory efficiency
-- Up to 8.6x speedup over baseline
+- Native FP4/FP8 quantization via TensorRT Model Optimizer
+- Built-in speculative decoding support
+- Paged KV cache (vLLM-style memory efficiency)
+- CUDA graph integration
 
 **Integration Path**:
-1. Export HeartMuLa to ONNX
-2. Convert ONNX to MNN
-3. Replace attention/FFN with MNN optimized ops
-4. Keep PyTorch for pipeline orchestration
+1. Export HeartMuLa to HuggingFace format
+2. Convert to TensorRT-LLM engine with FP4 quantization
+3. Use TensorRT-LLM Python API for inference
+4. Keep HeartCodec on PyTorch with `torch.compile()`
 
-### 5.2 Alternative: ExecuTorch (Meta)
+### 5.2 Alternative: vLLM / SGLang
 
-**Why**: Official PyTorch edge deployment solution
+**Why**: Production-ready, easy integration
 
-- Direct PyTorch model export
-- ARM backend with XNNPACK
-- Easier integration than MNN
+- PagedAttention for memory efficiency
+- Continuous batching for throughput
+- Speculative decoding support
+- Active community, frequent updates
 
-### 5.3 Alternative: ONNX Runtime Mobile
+### 5.3 For HeartCodec (Flow Matching)
 
-**Why**: Cross-platform with ARM optimizations
-
-- XNNPACK execution provider
-- Good transformer support
-- Easy ONNX conversion from PyTorch
+The codec transformer should use:
+- **torch.compile()** with `mode="max-autotune"` for CUDA graphs
+- **FlashAttention-3** (Blackwell optimized)
+- **TensorRT** for ScalarModel CNN decoder (optional)
 
 ---
 
 ## 6. Implementation Phases
 
-### Phase 1: Baseline Measurement (Week 1)
-- [ ] Port existing code to GB10
-- [ ] Measure baseline inference time
+### Phase 1: GPU Baseline
+- [ ] Run HeartMuLa on GB10 with FP16
+- [ ] Measure baseline inference time and memory
 - [ ] Profile hotspots with `torch.profiler`
-- [ ] Document memory usage patterns
+- [ ] Verify CUDA/FlashAttention compatibility
 
-### Phase 2: Quick Wins (Week 2)
-- [ ] Reduce flow matching steps to 10 (if quality acceptable)
+### Phase 2: Quick Wins
+- [ ] Reduce flow matching steps to 10 (quality test)
+- [ ] Enable `torch.compile()` with `mode="max-autotune"`
 - [ ] Ensure CFG batching is used everywhere
-- [ ] Enable `torch.compile()` with `inductor` backend
-- [ ] TorchScript all custom activations
+- [ ] Enable FlashAttention-3
 
-### Phase 3: Speculative Decoding (Weeks 3-4)
+### Phase 3: Quantization
+- [ ] Apply FP4 quantization via TensorRT Model Optimizer
+- [ ] Benchmark accuracy on music generation quality
+- [ ] A/B test FP4 vs FP16 output quality
+
+### Phase 4: Speculative Decoding
 - [ ] Implement draft model approach using 300M decoder
 - [ ] Add verification logic to 3B backbone
-- [ ] Tune acceptance threshold
+- [ ] Tune speculation length and acceptance threshold
 - [ ] Measure token acceptance rate
 
-### Phase 4: ARM64 Kernels (Weeks 5-6)
-- [ ] Integrate MNN or XNNPACK for matmul
-- [ ] Implement NEON RMSNorm
-- [ ] Implement NEON Rotary Embeddings
-- [ ] Multi-core attention distribution
-
-### Phase 5: Parallel Flow Matching (Week 7)
-- [ ] Implement segment batching
+### Phase 5: Parallel Flow Matching
+- [ ] Implement segment batching for long audio
 - [ ] Add overlap-add stitching
 - [ ] Test audio quality at segment boundaries
 
-### Phase 6: Integration & Testing (Week 8)
+### Phase 6: Integration & Testing
 - [ ] End-to-end pipeline testing
 - [ ] Quality evaluation (listening tests)
 - [ ] Final performance benchmarks
@@ -335,15 +337,14 @@ Use OpenMP or similar for parallel attention head computation:
 
 | Optimization | Individual Gain | Cumulative RTF |
 |--------------|-----------------|----------------|
-| Baseline (GPU RTX 3090) | 1.0x | 1.0 |
-| Baseline (GB10 ARM64) | ~0.1-0.2x | 5.0-10.0 |
-| + Reduce flow steps (20→10) | 1.5-2.0x | 3.0-5.0 |
-| + CFG batching | 1.2x | 2.5-4.0 |
-| + Speculative decoding (4x) | 3.0-4.0x | 0.8-1.5 |
-| + ARM NEON kernels | 1.5-2.0x | 0.5-1.0 |
-| + Multi-core parallelism | 1.3-1.5x | 0.4-0.7 |
+| Baseline (RTX 3090 FP16) | 1.0x | 1.0 |
+| GB10 Blackwell (FP16) | ~1.2-1.5x | 0.7-0.8 |
+| + FP4 quantization | 2-3x | 0.25-0.4 |
+| + Reduce flow steps (20→10) | 2.0x | 0.12-0.2 |
+| + Speculative decoding (4x) | 3.0-4.0x | 0.03-0.07 |
+| + CUDA graphs | 1.2-1.5x | 0.02-0.05 |
 
-**Target**: Achieve **sub-1.0 RTF** on GB10 (real-time or faster)
+**Target**: Achieve **0.02-0.1 RTF** on GB10 (10-50x faster than real-time)
 
 ---
 
@@ -392,20 +393,20 @@ Use OpenMP or similar for parallel attention head computation:
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 | Quality degradation from fewer ODE steps | Medium | High | A/B testing at each step count |
+| Quality degradation from FP4 quantization | Low | Medium | Keep HeartCodec at FP16, calibration dataset |
 | Speculative decoding low acceptance rate | Low | Medium | Tune temperature, fallback to AR |
-| ARM kernel bugs | Medium | Medium | Extensive unit testing |
-| Memory OOM on GB10 | High | High | Sequential model loading (PR #5) |
+| TensorRT-LLM conversion issues | Medium | Medium | Use vLLM as fallback |
 | Segment boundary artifacts | Medium | Medium | Overlap-add with cross-fade |
 
 ---
 
 ## 10. Success Criteria
 
-1. **Performance**: Achieve ≤1.5x RTF on GB10 for 3-minute songs
+1. **Performance**: Achieve ≤0.1 RTF on GB10 for 3-minute songs (10x+ faster than real-time)
 2. **Quality**: No perceptible audio quality degradation (blind listening test)
-3. **Memory**: Peak VRAM/RAM usage ≤12GB
+3. **Memory**: Peak usage ≤16GB (leaving 112GB headroom for batching/longer context)
 4. **Stability**: 100 consecutive generations without crash
-5. **Latency**: Time-to-first-audio ≤10 seconds
+5. **Latency**: Time-to-first-audio ≤3 seconds
 
 ---
 
@@ -425,15 +426,32 @@ src/heartlib/
     └── music_generation.py       # Pipeline orchestration
 ```
 
-## Appendix B: GB10 Hardware Specs (Assumed)
+## Appendix B: GB10 Hardware Specs
 
-- CPU: 8-core ARM Cortex-A78 or similar
-- RAM: 16GB LPDDR5
-- Compute: ARM Compute Library / NEON
-- Target power: <25W
+**Source**: [NVIDIA DGX Spark Hardware Documentation](https://docs.nvidia.com/dgx/dgx-spark/hardware.html)
+
+The GB10 is the **NVIDIA Grace Blackwell Superchip** powering the DGX Spark desktop AI system.
+
+| Component | Specification |
+|-----------|---------------|
+| **Chip** | GB10 Grace Blackwell Superchip |
+| **CPU** | 20-core ARM (10 Cortex-X925 @ 4GHz + 10 Cortex-A725 @ 2.8GHz) |
+| **GPU** | NVIDIA Blackwell Architecture, 6,144 CUDA cores, 5th Gen Tensor Cores |
+| **Memory** | 128GB LPDDR5x unified, 273 GB/s bandwidth |
+| **AI Performance** | 1 PFLOP FP4 sparse, 1,000 TOPS inference |
+| **Storage** | 1TB or 4TB NVMe M.2 |
+| **Power** | 140W TDP (GB10 SOC), 240W system |
+| **Networking** | 10GbE, ConnectX-7 (2x QSFP 200Gb/s aggregate), WiFi 7 |
+
+**Key Implications for Optimization**:
+- **GPU-first**: Heavy compute should target Blackwell Tensor Cores, not ARM CPU
+- **Unified memory**: 128GB shared between CPU/GPU eliminates transfer overhead
+- **FP4 optimal**: Blackwell achieves 1 PFLOP at FP4 precision with sparsity
+- **Model capacity**: Can run 200B parameter models locally (405B with two units linked)
 
 ---
 
-*Document Version: 1.0*
+*Document Version: 2.0*
 *Last Updated: 2026-01-20*
 *Author: Claude (for jhacksman/heartlib-gb10)*
+*Hardware verified from: [NVIDIA DGX Spark Documentation](https://docs.nvidia.com/dgx/dgx-spark/hardware.html)*
