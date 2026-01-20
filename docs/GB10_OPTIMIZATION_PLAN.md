@@ -219,8 +219,8 @@ Blackwell Tensor Cores still provide significant speedup at FP16 via FlashAttent
 
 Blackwell supports FlashAttention-3 with:
 - Asynchronous softmax computation
-- FP8 accumulation
 - Improved SM occupancy
+- Optimized memory access patterns
 
 Enable via: `torch.backends.cuda.enable_flash_sdp(True)`
 
@@ -431,7 +431,7 @@ The GB10 is the **NVIDIA Grace Blackwell Superchip** powering the DGX Spark desk
 | **CPU** | 20-core ARM (10 Cortex-X925 @ 4GHz + 10 Cortex-A725 @ 2.8GHz) |
 | **GPU** | NVIDIA Blackwell Architecture, 6,144 CUDA cores, 5th Gen Tensor Cores |
 | **Memory** | 128GB LPDDR5x unified, 273 GB/s bandwidth |
-| **AI Performance** | 1 PFLOP FP4 sparse, 1,000 TOPS inference |
+| **AI Performance** | 1,000 TOPS inference |
 | **Storage** | 1TB or 4TB NVMe M.2 |
 | **Power** | 140W TDP (GB10 SOC), 240W system |
 | **Networking** | 10GbE, ConnectX-7 (2x QSFP 200Gb/s aggregate), WiFi 7 |
