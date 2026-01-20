@@ -10,6 +10,7 @@ from tqdm import tqdm
 import torchaudio
 import json
 from transformers import BitsAndBytesConfig
+from ..patches import apply_all_patches
 
 
 @dataclass
@@ -214,6 +215,9 @@ class HeartMuLaGenPipeline(Pipeline):
         version: str,
         bnb_config: Optional[BitsAndBytesConfig] = None,
     ):
+
+        # Apply performance patches for GB10 and similar platforms
+        apply_all_patches()
 
         if os.path.exists(
             heartcodec_path := os.path.join(pretrained_path, "HeartCodec-oss")
