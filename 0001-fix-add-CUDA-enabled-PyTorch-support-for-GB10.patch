@@ -1,0 +1,104 @@
+From c15231b5c822b66144c96bcdae52475cfbe47091 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Tue, 20 Jan 2026 10:50:43 -0800
+Subject: [PATCH] fix: add CUDA-enabled PyTorch support for GB10
+
+- Move torch/torchaudio/torchvision to optional dependencies
+- Add [cuda] extra for CUDA 12.4 PyTorch builds
+- Add [cpu] extra for CPU-only builds
+- Configure uv extra-index-url for PyTorch CUDA wheels
+- Update README with installation instructions
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+---
+ README.md      | 25 ++++++++++++++++++++++++-
+ pyproject.toml | 25 +++++++++++++++++++------
+ 2 files changed, 43 insertions(+), 7 deletions(-)
+
+diff --git a/README.md b/README.md
+index 9b36fa4..1ec2ae7 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,25 @@
+ # heartlib-gb10
+-the HeartMuLa heartlib GB10 (DGX Spark, Asus Ascent GX10, Jetson Thor) optimization repo.
++
++HeartMuLa heartlib optimized for NVIDIA GB10 (DGX Spark, Asus Ascent GX10, Jetson Thor).
++
++## Installation
++
++### With CUDA support (recommended for GB10)
++
++```bash
++uv venv && source .venv/bin/activate
++uv pip install -e ".[cuda]"
++```
++
++### CPU only
++
++```bash
++uv venv && source .venv/bin/activate
++uv pip install -e ".[cpu]"
++```
++
++## Verify GPU
++
++```bash
++python -c "import torch; print(torch.cuda.get_device_name(0))"
++```
+diff --git a/pyproject.toml b/pyproject.toml
+index 12a2815..a91ab23 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
+ [project]
+ name = "heartlib"
+ version = "0.1.0"
+-description = "A Python Library."
++description = "A Python Library optimized for NVIDIA GB10 (DGX Spark)."
+ readme = "README.md"
+ requires-python = ">=3.9"
+ license = {text = "Apache-2.0"}
+@@ -14,11 +14,6 @@ authors = [
+ ]
+ dependencies = [
+     "numpy==2.0.2",
+-    "torch==2.4.1",
+-    "torchaudio==2.4.1",
+-    "torchtune==0.4.0",
+-    "torchao==0.9.0",
+-    "torchvision==0.19.1",
+     "tqdm==4.67.1",
+     "traitlets==5.7.1",
+     "traittypes==0.2.3",
+@@ -38,9 +33,27 @@ classifiers = [
+     "Operating System :: OS Independent"
+ ]
+ 
++[project.optional-dependencies]
++cuda = [
++    "torch==2.4.1+cu124",
++    "torchaudio==2.4.1+cu124",
++    "torchvision==0.19.1+cu124",
++    "torchtune==0.4.0",
++    "torchao==0.9.0"
++]
++cpu = [
++    "torch==2.4.1",
++    "torchaudio==2.4.1",
++    "torchvision==0.19.1",
++    "torchtune==0.4.0",
++    "torchao==0.9.0"
++]
++
+ [tool.setuptools]
+ package-dir = {"" = "src"}
+ 
+ [tool.setuptools.packages.find]
+ where = ["src"]
+ 
++[tool.uv]
++extra-index-url = ["https://download.pytorch.org/whl/cu124"]
+-- 
+2.43.0
+
