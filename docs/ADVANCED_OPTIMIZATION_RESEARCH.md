@@ -118,27 +118,27 @@ Tree attention verifies all candidates in parallel
 
 ---
 
-## 6. KVSwap: Disk-Aware Cache for Edge Devices
+## 6. KVSwap: Disk-Aware Cache (For Reference)
 
 **Source**: [arXiv:2511.11907](https://arxiv.org/abs/2511.11907) - November 2025
 
-For GB10's limited RAM, use NVMe/eMMC as KV cache overflow:
+**Note**: GB10 has 128GB unified memory - KVSwap is NOT needed for this platform. This section is retained for reference on memory-constrained deployments only.
 
 ```
 ┌─────────────────────────────────────────┐
-│              Memory Hierarchy            │
+│   GB10 Memory Reality (NOT Limited)      │
 ├─────────────────────────────────────────┤
-│ L1/L2 Cache:   Hot attention heads       │
-│ RAM (16GB):    Active KV entries         │
-│ NVMe/eMMC:     Cold KV entries           │
-│ Reuse Buffer:  Recently accessed KV      │
+│ Total: 128GB unified LPDDR5x             │
+│ Model: ~10GB at FP16                     │
+│ KV Cache: ~2GB for 8K context            │
+│ Headroom: 116GB (no disk offload needed) │
 └─────────────────────────────────────────┘
 ```
 
-**Key Techniques**:
+**Key Techniques** (for other platforms):
 - Compressed K cache reduces memory overhead
 - Grouped KV prediction for disk I/O optimization
-- Software reuse buffer for low-bandwidth devices (<200 MB/s)
+- Software reuse buffer for low-bandwidth devices
 
 ---
 
@@ -179,15 +179,15 @@ Current HeartCodec processes full audio at once. Streaming architecture enables:
 
 ## 9. Aggressive Optimization Stack (Maximum Speed)
 
-Combining the most promising techniques for GB10:
+Combining the most promising **lossless** techniques for GB10:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 AGGRESSIVE OPTIMIZATION STACK                │
+│         AGGRESSIVE OPTIMIZATION STACK (FP16, NO QUANT)       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  1. Consistency Distillation (FlowMatching)                  │
-│     └─ 20 steps → 1-2 steps = 10-20x speedup                │
+│     └─ 20 steps → 2-4 steps = 5-10x speedup                 │
 │                                                              │
 │  2. Jacobi Forcing + Lookahead Decoding (HeartMuLa)         │
 │     └─ AR bottleneck broken = 3-4x speedup                  │
@@ -195,18 +195,19 @@ Combining the most promising techniques for GB10:
 │  3. LayerSkip Self-Speculation                               │
 │     └─ Early layers draft, late layers verify = 1.8x        │
 │                                                              │
-│  4. Sliding Window Attention                                 │
-│     └─ Memory bounded, long context efficient = 1.5x        │
+│  4. Blackwell Tensor Cores + FlashAttention-3               │
+│     └─ GPU-optimized matmul/attention = 2x                  │
 │                                                              │
-│  5. KVSwap Disk Offloading                                   │
-│     └─ Enables larger batch / longer context                │
+│  5. CUDA Graphs for Autoregressive Loop                     │
+│     └─ Eliminate kernel launch overhead = 1.3x              │
 │                                                              │
-│  6. ARM NEON + MNN Kernels                                   │
-│     └─ Hardware-optimized matmul/attention = 2x             │
+│  6. Parallel Segment Batching                               │
+│     └─ Batch flow matching across segments = 1.5x           │
 │                                                              │
 │  ═══════════════════════════════════════════════════════════ │
-│  COMBINED THEORETICAL SPEEDUP: 50-100x over naive baseline  │
-│  TARGET RTF: 0.1-0.3 (3-10x faster than real-time)          │
+│  COMBINED THEORETICAL SPEEDUP: 30-50x over naive baseline   │
+│  TARGET RTF: 0.05-0.1 (10-20x faster than real-time)        │
+│  QUALITY: Full FP16 precision, no audio artifacts           │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
