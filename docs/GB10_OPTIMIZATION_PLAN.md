@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-This document outlines a comprehensive optimization strategy for running HeartMuLa (a 3B parameter music generation model) on the GB10 (NVIDIA Grace Blackwell Superchip). The GB10 features a Blackwell GPU with 6,144 CUDA cores and 128GB unified memory, enabling GPU-accelerated inference with optional FP4 quantization for maximum throughput.
+This document outlines a comprehensive optimization strategy for running HeartMuLa (a 3B parameter music generation model) on the GB10 (NVIDIA Grace Blackwell Superchip). The GB10 features a Blackwell GPU with 6,144 CUDA cores and 128GB unified memory, enabling GPU-accelerated inference at full FP16 precision.
 
-**Primary optimization vectors**: speculative decoding, flow matching step reduction, and GPU Tensor Core utilization.
+**Primary optimization vectors**: speculative decoding, flow matching step reduction, GPU Tensor Core utilization, and parallelization. **No quantization.**
 
 ---
 
@@ -65,7 +65,7 @@ From GitHub Issue #14:
 - RTX 5080 (16GB): ~11 min for 5 seconds (severe VRAM bottleneck)
 - After PR #5 fix: ~5 min for 3 min song
 
-**GB10 Target**: Achieve ≤0.1 RTF (10x+ faster than real-time) using GPU Tensor Cores with optional FP4 quantization.
+**GB10 Target**: Achieve ≤0.1 RTF (10x+ faster than real-time) using GPU Tensor Cores at FP16 precision (no quantization).
 
 ---
 
@@ -203,13 +203,17 @@ The GB10's Blackwell GPU has 5th Generation Tensor Cores optimized for transform
 
 #### 4.1.1 Precision Strategy
 
-| Precision | Memory | Throughput | Use Case |
-|-----------|--------|------------|----------|
-| FP16 | ~8GB | Baseline | Quality-sensitive components |
-| FP8 | ~4GB | 2x | HeartMuLa backbone |
-| **FP4** | **~2GB** | **3-4x** | **Maximum throughput** |
+**Full FP16 precision** - no quantization per project requirements.
 
-**Recommendation**: Use FP4 for HeartMuLa LM components, FP16 for HeartCodec (quality-sensitive audio).
+| Component | Precision | Memory |
+|-----------|-----------|--------|
+| HeartMuLa 3B | FP16 | ~6GB |
+| HeartMuLa 300M decoder | FP16 | ~0.6GB |
+| HeartCodec | FP16 | ~1GB |
+| KV Cache (8K context) | FP16 | ~2GB |
+| **Total** | | **~10GB** (118GB headroom) |
+
+Blackwell Tensor Cores still provide significant speedup at FP16 via FlashAttention-3 and optimized GEMM kernels.
 
 #### 4.1.2 FlashAttention-3
 
@@ -240,12 +244,7 @@ GB10's 128GB unified memory eliminates CPU-GPU transfer overhead:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Memory Budget** (HeartMuLa pipeline at FP4):
-- HeartMuLa 3B: ~1.5GB
-- HeartMuLa 300M decoder: ~0.15GB
-- HeartCodec (FP16): ~1.1GB
-- KV Cache (8K context): ~2GB
-- **Total: ~5GB** (123GB headroom)
+With 128GB unified memory and ~10GB model footprint at FP16, there's ample headroom for batching, longer context, or running multiple instances.
 
 ### 4.3 CUDA Graphs for Autoregressive Generation
 
@@ -266,14 +265,14 @@ This is critical for HeartMuLa's frame-by-frame generation where kernel launch o
 
 **Why**: NVIDIA's official LLM inference engine, optimized for Blackwell
 
-- Native FP4/FP8 quantization via TensorRT Model Optimizer
 - Built-in speculative decoding support
 - Paged KV cache (vLLM-style memory efficiency)
 - CUDA graph integration
+- FlashAttention-3 support
 
 **Integration Path**:
 1. Export HeartMuLa to HuggingFace format
-2. Convert to TensorRT-LLM engine with FP4 quantization
+2. Convert to TensorRT-LLM engine at FP16 precision
 3. Use TensorRT-LLM Python API for inference
 4. Keep HeartCodec on PyTorch with `torch.compile()`
 
@@ -309,23 +308,18 @@ The codec transformer should use:
 - [ ] Ensure CFG batching is used everywhere
 - [ ] Enable FlashAttention-3
 
-### Phase 3: Quantization
-- [ ] Apply FP4 quantization via TensorRT Model Optimizer
-- [ ] Benchmark accuracy on music generation quality
-- [ ] A/B test FP4 vs FP16 output quality
-
-### Phase 4: Speculative Decoding
+### Phase 3: Speculative Decoding
 - [ ] Implement draft model approach using 300M decoder
 - [ ] Add verification logic to 3B backbone
 - [ ] Tune speculation length and acceptance threshold
 - [ ] Measure token acceptance rate
 
-### Phase 5: Parallel Flow Matching
+### Phase 4: Parallel Flow Matching
 - [ ] Implement segment batching for long audio
 - [ ] Add overlap-add stitching
 - [ ] Test audio quality at segment boundaries
 
-### Phase 6: Integration & Testing
+### Phase 5: Integration & Testing
 - [ ] End-to-end pipeline testing
 - [ ] Quality evaluation (listening tests)
 - [ ] Final performance benchmarks
@@ -339,12 +333,12 @@ The codec transformer should use:
 |--------------|-----------------|----------------|
 | Baseline (RTX 3090 FP16) | 1.0x | 1.0 |
 | GB10 Blackwell (FP16) | ~1.2-1.5x | 0.7-0.8 |
-| + FP4 quantization | 2-3x | 0.25-0.4 |
-| + Reduce flow steps (20→10) | 2.0x | 0.12-0.2 |
-| + Speculative decoding (4x) | 3.0-4.0x | 0.03-0.07 |
-| + CUDA graphs | 1.2-1.5x | 0.02-0.05 |
+| + Reduce flow steps (20→10) | 2.0x | 0.35-0.4 |
+| + Speculative decoding (4x) | 3.0-4.0x | 0.09-0.13 |
+| + CUDA graphs | 1.2-1.5x | 0.06-0.1 |
+| + Parallel segment batching | 1.5-2x | 0.03-0.07 |
 
-**Target**: Achieve **0.02-0.1 RTF** on GB10 (10-50x faster than real-time)
+**Target**: Achieve **0.05-0.1 RTF** on GB10 (10-20x faster than real-time) at full FP16 precision
 
 ---
 
@@ -393,7 +387,6 @@ The codec transformer should use:
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 | Quality degradation from fewer ODE steps | Medium | High | A/B testing at each step count |
-| Quality degradation from FP4 quantization | Low | Medium | Keep HeartCodec at FP16, calibration dataset |
 | Speculative decoding low acceptance rate | Low | Medium | Tune temperature, fallback to AR |
 | TensorRT-LLM conversion issues | Medium | Medium | Use vLLM as fallback |
 | Segment boundary artifacts | Medium | Medium | Overlap-add with cross-fade |
@@ -446,7 +439,7 @@ The GB10 is the **NVIDIA Grace Blackwell Superchip** powering the DGX Spark desk
 **Key Implications for Optimization**:
 - **GPU-first**: Heavy compute should target Blackwell Tensor Cores, not ARM CPU
 - **Unified memory**: 128GB shared between CPU/GPU eliminates transfer overhead
-- **FP4 optimal**: Blackwell achieves 1 PFLOP at FP4 precision with sparsity
+- **FP16 focus**: Per project requirements, no quantization - rely on parallelization, speculative decoding, and CUDA optimization
 - **Model capacity**: Can run 200B parameter models locally (405B with two units linked)
 
 ---
