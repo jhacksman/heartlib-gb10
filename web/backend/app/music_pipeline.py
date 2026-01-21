@@ -33,8 +33,13 @@ class MusicPipeline:
     def _load_pipeline(self):
         """Load HeartLib pipeline."""
         try:
-            from heartlib.pipelines import MusicGenerationPipeline
-            self._pipeline = MusicGenerationPipeline(device=self.device)
+            from heartlib import HeartMuLaGenPipeline
+            self._pipeline = HeartMuLaGenPipeline.from_pretrained(
+                "/home/ctrlh/heartlib/ckpt",
+                device=self.device,
+                dtype=torch.bfloat16,
+                version="3B"
+            )
             print("HeartLib pipeline loaded successfully")
         except ImportError as e:
             print(f"Warning: Could not load HeartLib: {e}")
