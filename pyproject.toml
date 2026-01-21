@@ -27,7 +27,12 @@ dependencies = [
     "modelscope>=1.20.0",
     "soundfile",
     "torchtune>=0.4.0",
-    "torchao==0.9.0"
+    "torchao==0.9.0",
+    # Fix pyarrow/datasets compatibility - pyarrow 23.0.0 removed PyExtensionType
+    "pyarrow<15.0.0",
+    "datasets>=2.14.0",
+    # Triton for PyTorch optimizations (no version pin for ARM64 compatibility)
+    "triton",
 ]
 urls = { "homepage" = "https://heartmula.github.io/" }
 classifiers = [
@@ -40,3 +45,10 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv]
+extra-index-url = [
+    "https://pypi.nvidia.com",  # NVIDIA's ARM64 builds for DGX Spark
+    "https://download.pytorch.org/whl/nightly/cu128"
+]
+index-strategy = "unsafe-best-match"
