@@ -58,10 +58,11 @@ This document outlines the plan for building a web-based frontend for HeartLib m
 | Voice Selector | Dropdown | Voice model selection (e.g., "Atlas (warm tenor)") |
 | Style Reference | File Drop | Optional reference track upload |
 | Audio Upload | File Input | Upload audio for processing |
-| Weirdness Slider | Range | "Safe" to "Chaos" (0-100%) |
-| Style Influence Slider | Range | "Loose" to "Strong" (0-100%) |
-| Flow Steps Slider | Range | 5-20 steps (quality vs speed tradeoff) |
-| Create Button | Button | "Create 2 versions (cost: 10 credits)" |
+| Temperature | Range | Sampling temperature (0.1-2.0, default 1.0) |
+| Top-K | Range | Vocabulary restriction (1-100, default 50) |
+| CFG Scale | Range | Classifier-free guidance (1.0-3.0, default 1.5) |
+| Flow Steps | Range | 5-20 steps (quality vs speed tradeoff) |
+| Create Button | Button | "Create 2 versions" |
 
 ### 2.2 Center Panel: Timeline Editor
 
@@ -126,8 +127,9 @@ WS     /ws/jobs                   # Real-time job updates
     "instrumental": false,
     "duration": "2:10",
     "voice": "atlas_warm_tenor",
-    "weirdness": 0.5,
-    "style_influence": 0.7,
+    "temperature": 1.0,
+    "topk": 50,
+    "cfg_scale": 1.5,
     "flow_steps": 10,
     "num_versions": 2
   },
@@ -218,8 +220,8 @@ WS     /ws/jobs                   # Real-time job updates
 - [ ] Stems separation (if supported)
 - [ ] Download management
 
-### Phase 6: Polish & Credits
-- [ ] Credits system
+### Phase 6: Polish
+
 - [ ] Workspace management
 - [ ] User preferences
 - [ ] Mobile responsiveness
@@ -320,7 +322,6 @@ Music generation takes 30-60+ seconds. Users need feedback:
 2. **Storage**: Where to store generated audio? Local filesystem or cloud?
 3. **Stems**: Does HeartLib support stems separation, or is this a future feature?
 4. **Voice models**: What voice options are available in HeartMuLa?
-5. **Credits system**: Is this needed for a self-hosted solution?
 
 ---
 
