@@ -273,6 +273,7 @@ async def process_generation(
     flow_steps: int,
     temperature: float,
     cfg_scale: float,
+    topk: int,
 ):
     """Background task for music generation."""
     try:
@@ -306,6 +307,7 @@ async def process_generation(
                 flow_steps=flow_steps,
                 temperature=temperature,
                 cfg_scale=cfg_scale,
+                topk=topk,
                 output_path=str(output_path)
             )
         
@@ -333,18 +335,26 @@ async def generate_music(
     flow_steps: int = Form(10),
     temperature: float = Form(1.0),
     cfg_scale: float = Form(1.5),
+    topk: int = Form(50),
     user: dict = Depends(require_user)
 ):
     """
     Generate a new song.
     
-    - **prompt**: Description of the music to generate
-    - **tags**: Comma-separated style tags (e.g., "synthwave, 120bpm, female vocals")
+    - **prompt**: Song name (used for naming only, not for conditioning)
+    - **tags**: Comma-separated style tags (e.g., "polka,happy,accordion")
     - **lyrics**: Song lyrics with section markers ([Verse], [Chorus], etc.)
     - **duration_ms**: Target duration in milliseconds (default: 30000 = 30s)
     - **flow_steps**: Quality setting (5-20, higher = better quality but slower)
     - **temperature**: Creativity (0.5-2.0, higher = more creative)
-    - **cfg_scale**: Style adherence (1.0-2.0, higher = more strict)
+    - **cfg_scale**: Style adherence (1.0-3.0, higher = stronger tag/lyric conditioning)
+    - **topk**: Top-k sampling (default: 50, HeartLib's recommended value)
+    
+    HeartLib Recommended Settings:
+        - cfg_scale: 1.5 (controls how strongly tags/lyrics affect output)
+        - temperature: 1.0
+        - topk: 50
+        - Tags should be short keywords like: piano,happy,wedding,synthesizer,romantic
     """
     if user["credits"] < 10:
         raise HTTPException(status_code=402, detail="Insufficient credits")
@@ -377,6 +387,7 @@ async def generate_music(
         flow_steps=flow_steps,
         temperature=temperature,
         cfg_scale=cfg_scale,
+        topk=topk,
     )
     
     return GenerationResponse(
@@ -397,6 +408,7 @@ async def process_extend(
     flow_steps: int,
     temperature: float,
     cfg_scale: float,
+    topk: int,
 ):
     """Background task for extending a song."""
     try:
@@ -437,6 +449,7 @@ async def process_extend(
                 flow_steps=flow_steps,
                 temperature=temperature,
                 cfg_scale=cfg_scale,
+                topk=topk,
                 output_path=str(output_path)
             )
         
@@ -464,6 +477,7 @@ async def extend_song(
     flow_steps: int = Form(10),
     temperature: float = Form(1.0),
     cfg_scale: float = Form(1.5),
+    topk: int = Form(50),
     user: dict = Depends(require_user)
 ):
     """
@@ -476,7 +490,8 @@ async def extend_song(
     - **direction**: "before" or "after" the timestamp
     - **flow_steps**: Quality setting (5-20)
     - **temperature**: Creativity (0.5-2.0)
-    - **cfg_scale**: Style adherence (1.0-2.0)
+    - **cfg_scale**: Style adherence (1.0-3.0, higher = stronger conditioning)
+    - **topk**: Top-k sampling (default: 50, HeartLib's recommended value)
     """
     if song_id not in jobs:
         raise HTTPException(status_code=404, detail="Song not found")
@@ -518,6 +533,7 @@ async def extend_song(
         flow_steps=flow_steps,
         temperature=temperature,
         cfg_scale=cfg_scale,
+        topk=topk,
     )
     
     return GenerationResponse(

@@ -54,20 +54,28 @@ class MusicPipeline:
         flow_steps: int = 10,
         temperature: float = 1.0,
         cfg_scale: float = 1.5,
+        topk: int = 50,
         output_path: Optional[str] = None
     ) -> None:
         """
         Generate music from text prompt.
         
         Args:
-            prompt: Description of the music to generate
-            tags: Comma-separated style tags
-            lyrics: Song lyrics with section markers
+            prompt: Description of the music to generate (used for naming only, not conditioning)
+            tags: Comma-separated style tags (e.g., "polka,happy,accordion")
+            lyrics: Song lyrics with section markers ([Verse], [Chorus], etc.)
             duration_ms: Target duration in milliseconds
             flow_steps: Flow matching steps (quality/speed tradeoff)
-            temperature: Generation temperature
-            cfg_scale: Classifier-free guidance scale
+            temperature: Generation temperature (default: 1.0)
+            cfg_scale: Classifier-free guidance scale (default: 1.5, higher = stronger conditioning)
+            topk: Top-k sampling parameter (default: 50, HeartLib's recommended value)
             output_path: Path to save output (required - HeartLib writes directly to disk)
+        
+        HeartLib Recommended Settings (from official docs):
+            - cfg_scale: 1.5 (controls how strongly tags/lyrics affect output)
+            - temperature: 1.0
+            - topk: 50
+            - Tags should be short keywords like: piano,happy,wedding,synthesizer,romantic
         """
         if not output_path:
             raise ValueError("output_path is required - HeartLib writes directly to disk")
@@ -101,6 +109,7 @@ class MusicPipeline:
         print(f"  - duration_ms: {duration_ms}")
         print(f"  - temperature: {temperature}")
         print(f"  - cfg_scale: {cfg_scale}")
+        print(f"  - topk: {topk}")
         print(f"  - output_path: {output_path}")
         
         # HeartLib's pipeline writes directly to disk via save_path and returns None
@@ -110,6 +119,7 @@ class MusicPipeline:
             max_audio_length_ms=duration_ms,
             temperature=temperature,
             cfg_scale=cfg_scale,
+            topk=topk,
             save_path=output_path
         )
     
@@ -122,7 +132,8 @@ class MusicPipeline:
         direction: str = "after",
         flow_steps: int = 10,
         temperature: float = 1.0,
-        cfg_scale: float = 1.25,
+        cfg_scale: float = 1.5,
+        topk: int = 50,
         output_path: Optional[str] = None
     ) -> None:
         """
@@ -164,6 +175,7 @@ class MusicPipeline:
                 flow_steps=flow_steps,
                 temperature=temperature,
                 cfg_scale=cfg_scale,
+                topk=topk,
                 output_path=temp_path
             )
             
