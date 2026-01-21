@@ -1,4 +1,4 @@
-import { Music, Clock, Loader2, CheckCircle, XCircle, Trash2 } from 'lucide-react'
+import { Music, Clock, Loader2, CheckCircle, XCircle, Trash2, ListOrdered } from 'lucide-react'
 import { formatDuration } from '../lib/utils'
 
 interface Song {
@@ -8,6 +8,8 @@ interface Song {
   tags: string
   duration_ms: number
   status: string
+  progress: number
+  message: string
   output_url: string | null
   created_at: string
 }
@@ -23,8 +25,9 @@ export function SongList({ songs, selectedSongId, onSelectSong, onDeleteSong }: 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending':
+        return <ListOrdered className="w-4 h-4 text-yellow-400" />
       case 'processing':
-        return <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />
+        return <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
       case 'completed':
         return <CheckCircle className="w-4 h-4 text-green-400" />
       case 'failed':
@@ -34,18 +37,18 @@ export function SongList({ songs, selectedSongId, onSelectSong, onDeleteSong }: 
     }
   }
 
-  const getStatusText = (status: string) => {
-    switch (status) {
+  const getStatusText = (song: Song) => {
+    switch (song.status) {
       case 'pending':
         return 'Queued'
       case 'processing':
-        return 'Generating...'
+        return song.message || 'Generating...'
       case 'completed':
         return 'Ready'
       case 'failed':
-        return 'Failed'
+        return song.message || 'Failed'
       default:
-        return status
+        return song.status
     }
   }
 
@@ -94,8 +97,22 @@ export function SongList({ songs, selectedSongId, onSelectSong, onDeleteSong }: 
                     <Clock className="w-3 h-3" />
                     {formatDuration(song.duration_ms)}
                   </span>
-                  <span>{getStatusText(song.status)}</span>
+                  <span>{getStatusText(song)}</span>
                 </div>
+                
+                {song.status === 'processing' && (
+                  <div className="mt-2">
+                    <div className="w-full bg-studio-bg rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300 ease-out"
+                        style={{ width: `${Math.round(song.progress * 100)}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-studio-muted mt-1 text-right">
+                      {Math.round(song.progress * 100)}%
+                    </div>
+                  </div>
+                )}
                 
                 {song.tags && (
                   <div className="flex flex-wrap gap-1 mt-2">

@@ -85,6 +85,8 @@ class SongResponse(BaseModel):
     tags: str
     duration_ms: int
     status: str
+    progress: float
+    message: str
     output_url: Optional[str]
     created_at: str
 
@@ -627,6 +629,8 @@ async def list_songs(user: dict = Depends(require_user)):
             tags=job["tags"],
             duration_ms=job["duration_ms"],
             status=job["status"],
+            progress=job.get("progress", 0.0),
+            message=job.get("message", ""),
             output_url=job.get("output_url"),
             created_at=job["created_at"]
         )
