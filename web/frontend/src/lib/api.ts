@@ -15,6 +15,32 @@ export function getAuthToken(): string | null {
   return authToken
 }
 
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    const message = error.message.toLowerCase()
+    return message.includes('load failed') || 
+           message.includes('failed to fetch') || 
+           message.includes('network') ||
+           message.includes('cors')
+  }
+  return false
+}
+
+function getNetworkErrorMessage(): string {
+  return `Cannot connect to server at ${API_URL}. Please make sure the backend is running.`
+}
+
+async function safeFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  try {
+    return await fetch(url, options)
+  } catch (error) {
+    if (isNetworkError(error)) {
+      throw new Error(getNetworkErrorMessage())
+    }
+    throw error
+  }
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
@@ -24,7 +50,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${authToken}`
   }
   
-  const response = await fetch(`${API_URL}${url}`, {
+  const response = await safeFetch(`${API_URL}${url}`, {
     ...options,
     headers,
   })
@@ -73,7 +99,7 @@ export interface JobStatus {
 export const api = {
   // Auth
   async signup(email: string, password: string, name: string = ''): Promise<AuthResponse> {
-    const response = await fetch(`${API_URL}/api/auth/signup`, {
+    const response = await safeFetch(`${API_URL}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
@@ -88,7 +114,7 @@ export const api = {
   },
 
   async login(email: string, password: string): Promise<AuthResponse> {
-    const response = await fetch(`${API_URL}/api/auth/login`, {
+    const response = await safeFetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
