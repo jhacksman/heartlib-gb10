@@ -16,7 +16,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     # Audio processing
     "demucs>=4.0.0",
-    "torchaudio>=2.5.0",
+    # Note: torchaudio should be installed separately from NVIDIA's index for DGX Spark
+    # Do not pin version here - let users install from pypi.nvidia.com
     "soundfile>=0.12.1",
     "librosa>=0.10.0",
     "pydub>=0.25.1",  # For MP3 export (requires ffmpeg)
