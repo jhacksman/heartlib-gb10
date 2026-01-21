@@ -74,10 +74,22 @@ class MusicPipeline:
         
         # HeartLib only uses "tags" and "lyrics" - it ignores "prompt"
         # Merge the prompt into tags so the description influences generation
-        # Format: "prompt description, tag1, tag2, ..."
-        combined_tags = prompt.strip()
+        # HeartLib expects tags as comma-separated WITHOUT spaces: "tag1,tag2,tag3"
+        
+        # IMPORTANT: Put explicit tags FIRST so they have priority over the prompt
+        # This ensures genre tags like "polka" aren't overridden by generic descriptions
+        tag_list = []
+        
+        # Add explicit tags first (they're more specific and should have priority)
         if tags.strip():
-            combined_tags = f"{combined_tags}, {tags.strip()}" if combined_tags else tags.strip()
+            tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+        
+        # Add prompt description after tags
+        if prompt.strip():
+            tag_list.append(prompt.strip())
+        
+        # Join with commas (no spaces) as per HeartLib format
+        combined_tags = ','.join(tag_list)
         
         inputs = {
             "tags": combined_tags,

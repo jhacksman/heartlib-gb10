@@ -24,6 +24,7 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
   const [temperature, setTemperature] = useState(1.0)
   const [cfgScale, setCfgScale] = useState(1.25)
   const [loading, setLoading] = useState(false)
+  const [isInstrumental, setIsInstrumental] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,10 +32,20 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
 
     setLoading(true)
     try {
+      // Build final tags: add instrumental tag if selected
+      let finalTags = tags
+      if (isInstrumental) {
+        const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
+        if (!tagList.includes('instrumental')) {
+          tagList.push('instrumental')
+        }
+        finalTags = tagList.join(',')
+      }
+      
       await onGenerate({
         prompt,
-        tags,
-        lyrics,
+        tags: finalTags,
+        lyrics: isInstrumental ? '' : lyrics,
         duration_ms: duration * 1000,
         flow_steps: flowSteps,
         temperature,
@@ -53,7 +64,8 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
   const addTag = (tag: string) => {
     const currentTags = tags.split(',').map(t => t.trim()).filter(Boolean)
     if (!currentTags.includes(tag)) {
-      setTags([...currentTags, tag].join(', '))
+      // Use comma without space as per HeartLib format
+      setTags([...currentTags, tag].join(','))
     }
   }
 
@@ -101,19 +113,49 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm text-studio-muted mb-1">
-          <Mic className="w-4 h-4 inline mr-1" />
-          Lyrics (optional)
-        </label>
-        <textarea
-          value={lyrics}
-          onChange={(e) => setLyrics(e.target.value)}
-          placeholder="[Verse]&#10;Your lyrics here...&#10;&#10;[Chorus]&#10;The chorus goes here..."
-          rows={4}
-          className="w-full bg-studio-bg border border-studio-border rounded-lg p-3 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent resize-none font-mono text-sm"
-        />
+      <div className="flex items-center gap-3">
+        <label className="text-sm text-studio-muted">Type:</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setIsInstrumental(false)}
+            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+              !isInstrumental
+                ? 'bg-studio-accent text-white border-studio-accent'
+                : 'bg-studio-bg text-studio-muted border-studio-border hover:border-studio-accent'
+            }`}
+          >
+            With Vocals
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsInstrumental(true)}
+            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+              isInstrumental
+                ? 'bg-studio-accent text-white border-studio-accent'
+                : 'bg-studio-bg text-studio-muted border-studio-border hover:border-studio-accent'
+            }`}
+          >
+            Instrumental
+          </button>
+        </div>
       </div>
+
+      {!isInstrumental && (
+        <div>
+          <label className="block text-sm text-studio-muted mb-1">
+            <Mic className="w-4 h-4 inline mr-1" />
+            Lyrics (optional)
+          </label>
+          <textarea
+            value={lyrics}
+            onChange={(e) => setLyrics(e.target.value)}
+            placeholder="[Verse]&#10;Your lyrics here...&#10;&#10;[Chorus]&#10;The chorus goes here..."
+            rows={4}
+            className="w-full bg-studio-bg border border-studio-border rounded-lg p-3 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent resize-none font-mono text-sm"
+          />
+        </div>
+      )}
 
       <div>
         <label className="block text-sm text-studio-muted mb-1">
