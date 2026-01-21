@@ -16,6 +16,7 @@ interface SongActionsProps {
   }) => Promise<void>
   onCrop: (startMs: number, endMs: number) => Promise<void>
   authToken: string | null
+  backendUrl?: string
 }
 
 function sanitizeFilename(name: string): string {
@@ -35,6 +36,7 @@ export function SongActions({
   onExtend,
   onCrop,
   authToken,
+  backendUrl: _backendUrl,
 }: SongActionsProps) {
   const [showExtend, setShowExtend] = useState(false)
   const [showCrop, setShowCrop] = useState(false)

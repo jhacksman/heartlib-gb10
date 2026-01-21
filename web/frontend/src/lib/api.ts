@@ -1,4 +1,8 @@
+// Primary backend URL (for auth, listing songs, etc.)
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+// All backend URLs for parallel generation (2 versions like Suno)
+const BACKEND_URLS = (import.meta.env.VITE_BACKEND_URLS || `${API_URL}`).split(',').map((url: string) => url.trim())
 
 let authToken: string | null = localStorage.getItem('authToken')
 
@@ -15,7 +19,7 @@ export function getAuthToken(): string | null {
   return authToken
 }
 
-async function fetchWithAuth(url: string, options: RequestInit = {}) {
+async function fetchWithAuth(url: string, options: RequestInit = {}, baseUrl: string = API_URL) {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
   }
@@ -24,7 +28,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${authToken}`
   }
   
-  const response = await fetch(`${API_URL}${url}`, {
+  const response = await fetch(`${baseUrl}${url}`, {
     ...options,
     headers,
   })
@@ -60,6 +64,9 @@ export interface Song {
   message: string
   output_url: string | null
   created_at: string
+  // For dual-generation: which version (A, B, etc.) and which backend
+  version?: string
+  backendUrl?: string
 }
 
 export interface JobStatus {
@@ -124,7 +131,7 @@ export const api = {
     flow_steps?: number
     temperature?: number
     cfg_scale?: number
-  }): Promise<{ job_id: string; status: string; message: string }> {
+  }): Promise<{ job_ids: Array<{ job_id: string; version: string; backendUrl: string }>; status: string; message: string }> {
     const formData = new FormData()
     formData.append('prompt', params.prompt)
     formData.append('tags', params.tags || '')
@@ -134,15 +141,42 @@ export const api = {
     formData.append('temperature', String(params.temperature || 1.0))
     formData.append('cfg_scale', String(params.cfg_scale || 1.25))
 
-    const response = await fetchWithAuth('/api/songs/generate', {
-      method: 'POST',
-      body: formData,
+    // Call all backends in parallel for multiple versions (like Suno)
+    const versionLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    const generatePromises = BACKEND_URLS.map(async (backendUrl: string, index: number) => {
+      try {
+        const response = await fetchWithAuth('/api/songs/generate', {
+          method: 'POST',
+          body: formData,
+        }, backendUrl)
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.detail || 'Generation failed')
+        }
+        const data = await response.json()
+        return {
+          job_id: data.job_id,
+          version: versionLabels[index] || String(index + 1),
+          backendUrl,
+        }
+      } catch (error) {
+        console.error(`Generation failed on backend ${backendUrl}:`, error)
+        return null
+      }
     })
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.detail || 'Generation failed')
+
+    const results = await Promise.all(generatePromises)
+    const successfulJobs = results.filter((r): r is { job_id: string; version: string; backendUrl: string } => r !== null)
+
+    if (successfulJobs.length === 0) {
+      throw new Error('All generation attempts failed')
     }
-    return response.json()
+
+    return {
+      job_ids: successfulJobs,
+      status: 'pending',
+      message: `Started ${successfulJobs.length} version(s)`,
+    }
   },
 
   async extendSong(songId: string, params: {
@@ -191,28 +225,48 @@ export const api = {
   },
 
   async listSongs(): Promise<Song[]> {
-    const response = await fetchWithAuth('/api/songs')
-    if (!response.ok) throw new Error('Failed to list songs')
-    return response.json()
+    // Fetch songs from all backends and aggregate
+    const versionLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    const fetchPromises = BACKEND_URLS.map(async (backendUrl: string, index: number) => {
+      try {
+        const response = await fetchWithAuth('/api/songs', {}, backendUrl)
+        if (!response.ok) return []
+        const songs: Song[] = await response.json()
+        // Add version label and backend URL to each song
+        return songs.map(song => ({
+          ...song,
+          version: versionLabels[index] || String(index + 1),
+          backendUrl,
+        }))
+      } catch {
+        return []
+      }
+    })
+
+    const results = await Promise.all(fetchPromises)
+    const allSongs = results.flat()
+    
+    // Sort by created_at descending (newest first)
+    return allSongs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   },
 
-  async getSong(songId: string): Promise<JobStatus> {
-    const response = await fetchWithAuth(`/api/songs/${songId}`)
+  async getSong(songId: string, backendUrl?: string): Promise<JobStatus> {
+    const response = await fetchWithAuth(`/api/songs/${songId}`, {}, backendUrl || API_URL)
     if (!response.ok) throw new Error('Failed to get song')
     return response.json()
   },
 
-  async deleteSong(songId: string): Promise<void> {
-    const response = await fetchWithAuth(`/api/songs/${songId}`, { method: 'DELETE' })
+  async deleteSong(songId: string, backendUrl?: string): Promise<void> {
+    const response = await fetchWithAuth(`/api/songs/${songId}`, { method: 'DELETE' }, backendUrl || API_URL)
     if (!response.ok) throw new Error('Failed to delete song')
   },
 
-  getDownloadUrl(songId: string): string {
-    return `${API_URL}/api/songs/${songId}/download`
+  getDownloadUrl(songId: string, backendUrl?: string): string {
+    return `${backendUrl || API_URL}/api/songs/${songId}/download`
   },
 
-  async getAudioBlob(songId: string): Promise<Blob> {
-    const response = await fetchWithAuth(`/api/songs/${songId}/download`)
+  async getAudioBlob(songId: string, backendUrl?: string): Promise<Blob> {
+    const response = await fetchWithAuth(`/api/songs/${songId}/download`, {}, backendUrl || API_URL)
     if (!response.ok) throw new Error('Failed to fetch audio')
     return response.blob()
   },
