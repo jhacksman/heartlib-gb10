@@ -70,11 +70,13 @@ class MusicPipeline:
             "prompt": prompt,
             "tags": tags,
             "lyrics": lyrics,
-            "max_audio_length_ms": duration_ms,
         }
         
+        # max_audio_length_ms must be passed as a kwarg, not in inputs dict
+        # HeartLib's _sanitize_parameters extracts it from kwargs with default 120_000ms
         audio = self._pipeline(
             inputs,
+            max_audio_length_ms=duration_ms,
             num_steps=flow_steps,
             temperature=temperature,
             cfg_scale=cfg_scale
