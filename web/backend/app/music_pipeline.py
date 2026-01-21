@@ -53,7 +53,7 @@ class MusicPipeline:
         duration_ms: int = 30000,
         flow_steps: int = 10,
         temperature: float = 1.0,
-        cfg_scale: float = 1.25,
+        cfg_scale: float = 1.5,
         output_path: Optional[str] = None
     ) -> None:
         """
@@ -94,12 +94,20 @@ class MusicPipeline:
             "lyrics": lyrics,
         }
         
+        # Debug logging to trace what's being passed to HeartLib
+        print(f"[MusicPipeline] Generating with:")
+        print(f"  - tags: '{combined_tags}'")
+        print(f"  - lyrics: '{lyrics[:100]}...' (truncated)" if len(lyrics) > 100 else f"  - lyrics: '{lyrics}'")
+        print(f"  - duration_ms: {duration_ms}")
+        print(f"  - temperature: {temperature}")
+        print(f"  - cfg_scale: {cfg_scale}")
+        print(f"  - output_path: {output_path}")
+        
         # HeartLib's pipeline writes directly to disk via save_path and returns None
         # max_audio_length_ms must be passed as a kwarg, not in inputs dict
         self._pipeline(
             inputs,
             max_audio_length_ms=duration_ms,
-            num_steps=flow_steps,
             temperature=temperature,
             cfg_scale=cfg_scale,
             save_path=output_path

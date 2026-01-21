@@ -22,7 +22,7 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [flowSteps, setFlowSteps] = useState(10)
   const [temperature, setTemperature] = useState(1.0)
-  const [cfgScale, setCfgScale] = useState(1.25)
+  const [cfgScale, setCfgScale] = useState(1.5)
   const [loading, setLoading] = useState(false)
   const [isInstrumental, setIsInstrumental] = useState(false)
 

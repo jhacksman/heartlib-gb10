@@ -332,7 +332,7 @@ async def generate_music(
     duration_ms: int = Form(30000),
     flow_steps: int = Form(10),
     temperature: float = Form(1.0),
-    cfg_scale: float = Form(1.25),
+    cfg_scale: float = Form(1.5),
     user: dict = Depends(require_user)
 ):
     """
@@ -463,7 +463,7 @@ async def extend_song(
     direction: str = Form("after"),
     flow_steps: int = Form(10),
     temperature: float = Form(1.0),
-    cfg_scale: float = Form(1.25),
+    cfg_scale: float = Form(1.5),
     user: dict = Depends(require_user)
 ):
     """
