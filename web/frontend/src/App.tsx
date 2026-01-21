@@ -91,12 +91,6 @@ function App() {
     }
   }
 
-  const handleGenerationComplete = async () => {
-    await loadSongs()
-    const userData = await api.getMe()
-    setUser(userData)
-  }
-
   const handleExtend = async (params: {
     extend_from_ms: number
     extend_duration_ms: number
@@ -172,8 +166,6 @@ function App() {
           <GenerationForm
             onGenerate={handleGenerate}
             disabled={user.credits < 10}
-            token={getAuthToken() || ""}
-            onGenerationComplete={handleGenerationComplete}
           />
         </div>
 

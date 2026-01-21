@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Sparkles, Music, Mic, Clock, Sliders } from "lucide-react"
-import { GenerationProgress } from "./GenerationProgress"
 
 interface GenerationFormProps {
   onGenerate: (params: {
@@ -13,11 +12,9 @@ interface GenerationFormProps {
     cfg_scale: number
   }) => Promise<string>
   disabled?: boolean
-  token: string
-  onGenerationComplete: () => void
 }
 
-export function GenerationForm({ onGenerate, disabled, token, onGenerationComplete }: GenerationFormProps) {
+export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
   const [prompt, setPrompt] = useState("")
   const [tags, setTags] = useState("")
   const [lyrics, setLyrics] = useState("")
@@ -28,14 +25,15 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
   const [cfgScale, setCfgScale] = useState(1.5)
   const [isInstrumental, setIsInstrumental] = useState(false)
   
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!prompt.trim() || activeJobId) return
+    if (!prompt.trim() || isSubmitting) return
 
     setGenerationError(null)
+    setIsSubmitting(true)
     
     try {
       let finalTags = tags
@@ -47,7 +45,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
         finalTags = tagList.join(",")
       }
       
-      const jobId = await onGenerate({
+      await onGenerate({
         prompt,
         tags: finalTags,
         lyrics: isInstrumental ? "" : lyrics,
@@ -57,23 +55,15 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
         cfg_scale: cfgScale,
       })
       
-      setActiveJobId(jobId)
+      // Clear form after successful submission
+      setPrompt("")
+      setTags("")
+      setLyrics("")
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Generation failed")
+    } finally {
+      setIsSubmitting(false)
     }
-  }
-
-  const handleComplete = () => {
-    setActiveJobId(null)
-    setPrompt("")
-    setTags("")
-    setLyrics("")
-    onGenerationComplete()
-  }
-
-  const handleError = (error: string) => {
-    setActiveJobId(null)
-    setGenerationError(error)
   }
 
   const presetTags = [
@@ -87,25 +77,6 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
     if (!currentTags.includes(tag)) {
       setTags([...currentTags, tag].join(","))
     }
-  }
-
-  if (activeJobId) {
-    return (
-      <div className="space-y-4">
-        <div className="bg-studio-panel rounded-lg border border-studio-border p-4">
-          <h2 className="text-lg font-semibold text-studio-text flex items-center gap-2 mb-4">
-            <Sparkles className="w-5 h-5 text-studio-accent" />
-            Creating: {prompt}
-          </h2>
-          <GenerationProgress
-            jobId={activeJobId}
-            token={token}
-            onComplete={handleComplete}
-            onError={handleError}
-          />
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -132,6 +103,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="My Awesome Track"
           className="w-full bg-studio-bg border border-studio-border rounded-lg p-2 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent"
+          disabled={isSubmitting}
         />
       </div>
 
@@ -145,6 +117,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
           onChange={(e) => setTags(e.target.value)}
           placeholder="polka,happy,accordion"
           className="w-full bg-studio-bg border border-studio-border rounded-lg p-2 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent"
+          disabled={isSubmitting}
         />
         <p className="text-xs text-studio-muted mt-1">Use short keywords separated by commas (e.g., polka,happy,accordion)</p>
         <div className="flex flex-wrap gap-1 mt-2">
@@ -153,7 +126,8 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
               key={tag}
               type="button"
               onClick={() => addTag(tag)}
-              className="px-2 py-1 text-xs bg-studio-bg border border-studio-border rounded hover:border-studio-accent text-studio-muted hover:text-studio-text transition-colors"
+              disabled={isSubmitting}
+              className="px-2 py-1 text-xs bg-studio-bg border border-studio-border rounded hover:border-studio-accent text-studio-muted hover:text-studio-text transition-colors disabled:opacity-50"
             >
               {tag}
             </button>
@@ -167,6 +141,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
           <button
             type="button"
             onClick={() => setIsInstrumental(false)}
+            disabled={isSubmitting}
             className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
               !isInstrumental
                 ? "bg-studio-accent text-white border-studio-accent"
@@ -178,6 +153,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
           <button
             type="button"
             onClick={() => setIsInstrumental(true)}
+            disabled={isSubmitting}
             className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
               isInstrumental
                 ? "bg-studio-accent text-white border-studio-accent"
@@ -198,9 +174,10 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
           <textarea
             value={lyrics}
             onChange={(e) => setLyrics(e.target.value)}
-            placeholder="[Verse]&#10;Your lyrics here...&#10;&#10;[Chorus]&#10;The chorus goes here..."
+            placeholder={"[Verse]\nYour lyrics here...\n\n[Chorus]\nThe chorus goes here..."}
             rows={4}
             className="w-full bg-studio-bg border border-studio-border rounded-lg p-3 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent resize-none font-mono text-sm"
+            disabled={isSubmitting}
           />
         </div>
       )}
@@ -218,6 +195,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
           value={duration}
           onChange={(e) => setDuration(Number(e.target.value))}
           className="w-full accent-studio-accent"
+          disabled={isSubmitting}
         />
         <div className="flex justify-between text-xs text-studio-muted">
           <span>10s</span>
@@ -248,6 +226,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
                 value={flowSteps}
                 onChange={(e) => setFlowSteps(Number(e.target.value))}
                 className="w-full accent-studio-accent"
+                disabled={isSubmitting}
               />
               <div className="flex justify-between text-xs text-studio-muted">
                 <span>Fast (5)</span>
@@ -267,6 +246,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
                 value={temperature}
                 onChange={(e) => setTemperature(Number(e.target.value))}
                 className="w-full accent-studio-accent"
+                disabled={isSubmitting}
               />
               <div className="flex justify-between text-xs text-studio-muted">
                 <span>Conservative (0.5)</span>
@@ -286,6 +266,7 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
                 value={cfgScale}
                 onChange={(e) => setCfgScale(Number(e.target.value))}
                 className="w-full accent-studio-accent"
+                disabled={isSubmitting}
               />
               <div className="flex justify-between text-xs text-studio-muted">
                 <span>Loose (1.0)</span>
@@ -298,11 +279,11 @@ export function GenerationForm({ onGenerate, disabled, token, onGenerationComple
 
       <button
         type="submit"
-        disabled={disabled || !prompt.trim()}
+        disabled={disabled || !prompt.trim() || isSubmitting}
         className="w-full bg-studio-accent hover:bg-blue-600 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         <Sparkles className="w-5 h-5" />
-        Generate Song (10 credits)
+        {isSubmitting ? "Submitting..." : "Generate Song (10 credits)"}
       </button>
     </form>
   )

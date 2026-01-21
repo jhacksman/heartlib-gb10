@@ -56,6 +56,8 @@ export interface Song {
   tags: string
   duration_ms: number
   status: string
+  progress: number
+  message: string
   output_url: string | null
   created_at: string
 }
