@@ -53,7 +53,7 @@ class MusicPipeline:
         duration_ms: int = 30000,
         flow_steps: int = 10,
         temperature: float = 1.0,
-        cfg_scale: float = 1.25,
+        cfg_scale: float = 1.5,
         output_path: Optional[str] = None
     ) -> None:
         """
@@ -73,23 +73,41 @@ class MusicPipeline:
             raise ValueError("output_path is required - HeartLib writes directly to disk")
         
         # HeartLib only uses "tags" and "lyrics" - it ignores "prompt"
-        # Merge the prompt into tags so the description influences generation
-        # Format: "prompt description, tag1, tag2, ..."
-        combined_tags = prompt.strip()
+        # HeartLib expects tags as comma-separated SHORT KEYWORDS without spaces
+        # Example from official docs: "piano,happy,wedding,synthesizer,romantic"
+        # 
+        # IMPORTANT: Do NOT merge prompt text into tags!
+        # The model was trained on short keyword tags, not full sentences.
+        # Merging descriptions like "A dreamy synthwave track" causes the model
+        # to pick up on words like "synthwave" and ignore the actual genre tags.
+        
+        # Normalize tags: remove extra spaces, ensure comma-separated without spaces
+        tag_list = []
         if tags.strip():
-            combined_tags = f"{combined_tags}, {tags.strip()}" if combined_tags else tags.strip()
+            tag_list = [t.strip().lower() for t in tags.split(',') if t.strip()]
+        
+        # Join with commas (no spaces) as per HeartLib format
+        combined_tags = ','.join(tag_list)
         
         inputs = {
             "tags": combined_tags,
             "lyrics": lyrics,
         }
         
+        # Debug logging to trace what's being passed to HeartLib
+        print(f"[MusicPipeline] Generating with:")
+        print(f"  - tags: '{combined_tags}'")
+        print(f"  - lyrics: '{lyrics[:100]}...' (truncated)" if len(lyrics) > 100 else f"  - lyrics: '{lyrics}'")
+        print(f"  - duration_ms: {duration_ms}")
+        print(f"  - temperature: {temperature}")
+        print(f"  - cfg_scale: {cfg_scale}")
+        print(f"  - output_path: {output_path}")
+        
         # HeartLib's pipeline writes directly to disk via save_path and returns None
         # max_audio_length_ms must be passed as a kwarg, not in inputs dict
         self._pipeline(
             inputs,
             max_audio_length_ms=duration_ms,
-            num_steps=flow_steps,
             temperature=temperature,
             cfg_scale=cfg_scale,
             save_path=output_path

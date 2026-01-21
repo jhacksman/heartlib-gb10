@@ -116,6 +116,9 @@ async def require_user(credentials: HTTPAuthorizationCredentials = Depends(secur
 # Global pipeline instance
 pipeline = None
 
+# Lock to prevent concurrent generations (HeartLib model isn't thread-safe)
+generation_lock = asyncio.Lock()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -287,21 +290,24 @@ async def process_generation(
             return
         
         jobs[job_id]["progress"] = 0.2
-        jobs[job_id]["message"] = "Generating music..."
+        jobs[job_id]["message"] = "Waiting for GPU..."
         
         output_path = OUTPUT_DIR / f"{job_id}.wav"
         
-        await asyncio.to_thread(
-            pipeline.generate,
-            prompt=prompt,
-            tags=tags,
-            lyrics=lyrics,
-            duration_ms=duration_ms,
-            flow_steps=flow_steps,
-            temperature=temperature,
-            cfg_scale=cfg_scale,
-            output_path=str(output_path)
-        )
+        # Acquire lock to prevent concurrent generations (HeartLib model isn't thread-safe)
+        async with generation_lock:
+            jobs[job_id]["message"] = "Generating music..."
+            await asyncio.to_thread(
+                pipeline.generate,
+                prompt=prompt,
+                tags=tags,
+                lyrics=lyrics,
+                duration_ms=duration_ms,
+                flow_steps=flow_steps,
+                temperature=temperature,
+                cfg_scale=cfg_scale,
+                output_path=str(output_path)
+            )
         
         jobs[job_id]["progress"] = 1.0
         jobs[job_id]["status"] = "completed"
@@ -326,7 +332,7 @@ async def generate_music(
     duration_ms: int = Form(30000),
     flow_steps: int = Form(10),
     temperature: float = Form(1.0),
-    cfg_scale: float = Form(1.25),
+    cfg_scale: float = Form(1.5),
     user: dict = Depends(require_user)
 ):
     """
@@ -414,22 +420,25 @@ async def process_extend(
             return
         
         jobs[job_id]["progress"] = 0.3
-        jobs[job_id]["message"] = f"Extending {direction} from {extend_from_ms}ms..."
+        jobs[job_id]["message"] = "Waiting for GPU..."
         
         output_path = OUTPUT_DIR / f"{job_id}.wav"
         
-        await asyncio.to_thread(
-            pipeline.extend,
-            source_path=str(source_path),
-            extend_from_ms=extend_from_ms,
-            extend_duration_ms=extend_duration_ms,
-            prompt=prompt,
-            direction=direction,
-            flow_steps=flow_steps,
-            temperature=temperature,
-            cfg_scale=cfg_scale,
-            output_path=str(output_path)
-        )
+        # Acquire lock to prevent concurrent generations (HeartLib model isn't thread-safe)
+        async with generation_lock:
+            jobs[job_id]["message"] = f"Extending {direction} from {extend_from_ms}ms..."
+            await asyncio.to_thread(
+                pipeline.extend,
+                source_path=str(source_path),
+                extend_from_ms=extend_from_ms,
+                extend_duration_ms=extend_duration_ms,
+                prompt=prompt,
+                direction=direction,
+                flow_steps=flow_steps,
+                temperature=temperature,
+                cfg_scale=cfg_scale,
+                output_path=str(output_path)
+            )
         
         jobs[job_id]["progress"] = 1.0
         jobs[job_id]["status"] = "completed"
@@ -454,7 +463,7 @@ async def extend_song(
     direction: str = Form("after"),
     flow_steps: int = Form(10),
     temperature: float = Form(1.0),
-    cfg_scale: float = Form(1.25),
+    cfg_scale: float = Form(1.5),
     user: dict = Depends(require_user)
 ):
     """
