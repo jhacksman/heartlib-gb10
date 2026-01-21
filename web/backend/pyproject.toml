@@ -19,6 +19,7 @@ dependencies = [
     "torchaudio>=2.5.0",
     "soundfile>=0.12.1",
     "librosa>=0.10.0",
+    "pydub>=0.25.1",  # For MP3 export (requires ffmpeg)
     # HeartLib (installed from parent)
     "heartlib @ file:///${PROJECT_ROOT}/../..",
 ]

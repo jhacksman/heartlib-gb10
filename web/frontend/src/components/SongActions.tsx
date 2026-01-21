@@ -42,6 +42,7 @@ export function SongActions({
   const [showCrop, setShowCrop] = useState(false)
   const [showDownload, setShowDownload] = useState(false)
   const [downloadFilename, setDownloadFilename] = useState('')
+  const [downloadFormat, setDownloadFormat] = useState<'wav' | 'mp3'>('wav')
   const [extendDuration, setExtendDuration] = useState(30)
   const [extendDirection, setExtendDirection] = useState<'before' | 'after'>('after')
   const [extendPrompt, setExtendPrompt] = useState('')
@@ -61,7 +62,9 @@ export function SongActions({
     
     setDownloading(true)
     try {
-      const response = await fetch(downloadUrl, {
+      // Add format query parameter to download URL
+      const urlWithFormat = `${downloadUrl}?format=${downloadFormat}`
+      const response = await fetch(urlWithFormat, {
         headers: { Authorization: `Bearer ${authToken}` },
       })
       
@@ -72,7 +75,7 @@ export function SongActions({
       const a = document.createElement('a')
       a.href = url
       const safeName = sanitizeFilename(downloadFilename.trim())
-      a.download = `${safeName}.wav`
+      a.download = `${safeName}.${downloadFormat}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -331,7 +334,14 @@ export function SongActions({
                     }}
                     autoFocus
                   />
-                  <span className="text-studio-muted">.wav</span>
+                  <select
+                    value={downloadFormat}
+                    onChange={(e) => setDownloadFormat(e.target.value as 'wav' | 'mp3')}
+                    className="bg-studio-bg border border-studio-border rounded-lg p-3 text-studio-text focus:outline-none focus:border-studio-accent"
+                  >
+                    <option value="wav">.wav</option>
+                    <option value="mp3">.mp3</option>
+                  </select>
                 </div>
               </div>
 

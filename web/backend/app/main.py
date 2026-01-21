@@ -724,8 +724,12 @@ async def get_song(song_id: str, user: dict = Depends(require_user)):
 
 
 @app.get("/api/songs/{song_id}/download")
-async def download_song(song_id: str, user: dict = Depends(require_user)):
-    """Download the audio file for a song."""
+async def download_song(
+    song_id: str, 
+    format: str = "wav",
+    user: dict = Depends(require_user)
+):
+    """Download the audio file for a song in WAV or MP3 format."""
     if song_id not in jobs:
         raise HTTPException(status_code=404, detail="Song not found")
     
@@ -736,6 +740,38 @@ async def download_song(song_id: str, user: dict = Depends(require_user)):
     output_path = OUTPUT_DIR / f"{song_id}.wav"
     if not output_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    # Validate format
+    format = format.lower()
+    if format not in ["wav", "mp3"]:
+        format = "wav"
+    
+    if format == "mp3":
+        # Convert WAV to MP3 using pydub/ffmpeg
+        try:
+            from pydub import AudioSegment
+            mp3_path = OUTPUT_DIR / f"{song_id}.mp3"
+            
+            # Only convert if MP3 doesn't exist or WAV is newer
+            if not mp3_path.exists() or output_path.stat().st_mtime > mp3_path.stat().st_mtime:
+                audio = AudioSegment.from_wav(str(output_path))
+                audio.export(str(mp3_path), format="mp3", bitrate="320k")
+            
+            return FileResponse(
+                path=str(mp3_path),
+                media_type="audio/mpeg",
+                filename=f"{job['name'][:30]}.mp3"
+            )
+        except ImportError:
+            raise HTTPException(
+                status_code=500, 
+                detail="MP3 export requires pydub. Install with: pip install pydub"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"MP3 conversion failed: {str(e)}. Make sure ffmpeg is installed."
+            )
     
     return FileResponse(
         path=str(output_path),
