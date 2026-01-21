@@ -114,9 +114,11 @@ class MusicPipeline:
         
         # HeartLib's pipeline writes directly to disk via save_path and returns None
         # max_audio_length_ms must be passed as a kwarg, not in inputs dict
+        print(f"  - flow_steps: {flow_steps}")
         self._pipeline(
             inputs,
             max_audio_length_ms=duration_ms,
+            num_steps=flow_steps,
             temperature=temperature,
             cfg_scale=cfg_scale,
             topk=topk,
