@@ -19,7 +19,7 @@ export function getAuthToken(): string | null {
   return authToken
 }
 
-async function fetchWithAuth(url: string, options: RequestInit = {}, baseUrl: string = API_URL) {
+async function fetchWithAuth(url: string, options: RequestInit = {}, baseUrl: string = API_URL, handleAuthError: boolean = true) {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
   }
@@ -33,9 +33,11 @@ async function fetchWithAuth(url: string, options: RequestInit = {}, baseUrl: st
     headers,
   })
   
-  if (response.status === 401) {
+  // Only handle 401 for primary backend requests
+  // Secondary backends may not have the session (in-memory storage)
+  if (response.status === 401 && handleAuthError && baseUrl === API_URL) {
     setAuthToken(null)
-    window.location.href = '/login'
+    window.location.reload()
   }
   
   return response
@@ -145,10 +147,11 @@ export const api = {
     const versionLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
     const generatePromises = BACKEND_URLS.map(async (backendUrl: string, index: number) => {
       try {
+        // Don't handle auth errors for secondary backends (they may not have the session)
         const response = await fetchWithAuth('/api/songs/generate', {
           method: 'POST',
           body: formData,
-        }, backendUrl)
+        }, backendUrl, backendUrl === API_URL)
         if (!response.ok) {
           const error = await response.json()
           throw new Error(error.detail || 'Generation failed')
@@ -229,7 +232,8 @@ export const api = {
     const versionLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
     const fetchPromises = BACKEND_URLS.map(async (backendUrl: string, index: number) => {
       try {
-        const response = await fetchWithAuth('/api/songs', {}, backendUrl)
+        // Don't handle auth errors for secondary backends (they may not have the session)
+        const response = await fetchWithAuth('/api/songs', {}, backendUrl, backendUrl === API_URL)
         if (!response.ok) return []
         const songs: Song[] = await response.json()
         // Add version label and backend URL to each song
