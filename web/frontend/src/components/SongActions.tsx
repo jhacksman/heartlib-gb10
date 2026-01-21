@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Download, Scissors, ArrowRight, ArrowLeft, Clock } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Download, Scissors, ArrowRight, ArrowLeft, Clock, X } from 'lucide-react'
 import { formatDuration } from '../lib/utils'
 
 interface SongActionsProps {
@@ -18,6 +18,14 @@ interface SongActionsProps {
   authToken: string | null
 }
 
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100) || 'untitled'
+}
+
 export function SongActions({
   songId: _songId,
   songName,
@@ -30,16 +38,26 @@ export function SongActions({
 }: SongActionsProps) {
   const [showExtend, setShowExtend] = useState(false)
   const [showCrop, setShowCrop] = useState(false)
+  const [showDownload, setShowDownload] = useState(false)
+  const [downloadFilename, setDownloadFilename] = useState('')
   const [extendDuration, setExtendDuration] = useState(30)
   const [extendDirection, setExtendDirection] = useState<'before' | 'after'>('after')
   const [extendPrompt, setExtendPrompt] = useState('')
   const [cropStart, setCropStart] = useState(0)
   const [cropEnd, setCropEnd] = useState(durationMs)
   const [loading, setLoading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  useEffect(() => {
+    if (showDownload) {
+      setDownloadFilename(sanitizeFilename(songName))
+    }
+  }, [showDownload, songName])
 
   const handleDownload = async () => {
-    if (!authToken) return
+    if (!authToken || !downloadFilename.trim()) return
     
+    setDownloading(true)
     try {
       const response = await fetch(downloadUrl, {
         headers: { Authorization: `Bearer ${authToken}` },
@@ -51,13 +69,17 @@ export function SongActions({
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${songName}.wav`
+      const safeName = sanitizeFilename(downloadFilename.trim())
+      a.download = `${safeName}.wav`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
+      setShowDownload(false)
     } catch (error) {
       console.error('Download error:', error)
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -94,7 +116,11 @@ export function SongActions({
 
       <div className="flex flex-wrap gap-2">
         <button
-          onClick={handleDownload}
+          onClick={() => {
+            setShowDownload(true)
+            setShowExtend(false)
+            setShowCrop(false)
+          }}
           className="flex items-center gap-2 px-3 py-2 bg-studio-bg border border-studio-border rounded-lg text-studio-text hover:border-studio-accent transition-colors"
         >
           <Download className="w-4 h-4" />
@@ -268,6 +294,63 @@ export function SongActions({
           >
             {loading ? 'Cropping...' : 'Crop Song'}
           </button>
+        </div>
+      )}
+
+      {showDownload && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-studio-panel border border-studio-border rounded-lg p-6 w-full max-w-md mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-lg font-medium text-studio-text">Download Song</h4>
+              <button
+                onClick={() => setShowDownload(false)}
+                className="p-1 text-studio-muted hover:text-studio-text transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-studio-muted mb-2">
+                  Filename
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={downloadFilename}
+                    onChange={(e) => setDownloadFilename(e.target.value)}
+                    placeholder="Enter filename"
+                    className="flex-1 bg-studio-bg border border-studio-border rounded-lg p-3 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && downloadFilename.trim()) {
+                        handleDownload()
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <span className="text-studio-muted">.wav</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDownload(false)}
+                  className="flex-1 px-4 py-2 bg-studio-bg border border-studio-border rounded-lg text-studio-text hover:border-studio-accent transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDownload}
+                  disabled={downloading || !downloadFilename.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-studio-accent hover:bg-blue-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4" />
+                  {downloading ? 'Downloading...' : 'Download'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
