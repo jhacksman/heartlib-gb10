@@ -6,6 +6,7 @@ MVP features: music generation, extend at any timestamp, crop, download.
 """
 
 import os
+import json
 import uuid
 import asyncio
 import hashlib
@@ -17,7 +18,7 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -715,3 +716,74 @@ async def get_job_status(job_id: str):
         duration_ms=job.get("duration_ms"),
         created_at=job.get("created_at")
     )
+
+
+# ============== Progress Streaming Endpoint ==============
+
+@app.get("/api/songs/{song_id}/progress")
+async def stream_progress(song_id: str, user: dict = Depends(require_user)):
+    """
+    Stream real-time progress updates for a song generation job using SSE.
+    """
+    if song_id not in jobs:
+        raise HTTPException(status_code=404, detail="Song not found")
+    
+    job = jobs[song_id]
+    if job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not your song")
+    
+    async def event_generator():
+        while True:
+            if song_id not in jobs:
+                yield f"data: {json.dumps({'status': 'deleted'})}\n\n"
+                break
+            
+            job = jobs[song_id]
+            
+            # Check queue position
+            queue_position = 0
+            if job["status"] in ["pending", "processing"] and generation_lock.locked():
+                # Count jobs ahead in queue
+                for j in jobs.values():
+                    if j["id"] != song_id and j["status"] == "processing":
+                        queue_position += 1
+            
+            data = {
+                "status": job["status"],
+                "progress": job["progress"],
+                "message": job["message"],
+                "queue_position": queue_position,
+                "output_url": job.get("output_url")
+            }
+            
+            yield f"data: {json.dumps(data)}\n\n"
+            
+            if job["status"] in ["completed", "failed"]:
+                break
+            
+            await asyncio.sleep(0.5)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@app.get("/api/queue/status")
+async def get_queue_status(user: dict = Depends(require_user)):
+    """Get current queue status."""
+    pending_jobs = [j for j in jobs.values() if j["status"] == "pending"]
+    processing_jobs = [j for j in jobs.values() if j["status"] == "processing"]
+    
+    return {
+        "is_generating": generation_lock.locked(),
+        "pending_count": len(pending_jobs),
+        "processing_count": len(processing_jobs),
+        "user_pending": len([j for j in pending_jobs if j.get("user_id") == user["id"]]),
+        "user_processing": len([j for j in processing_jobs if j.get("user_id") == user["id"]])
+    }
