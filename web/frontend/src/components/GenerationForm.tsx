@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { Sparkles, Music, Mic, Clock, Sliders } from 'lucide-react'
+import { useState } from "react"
+import { Sparkles, Music, Mic, Clock, Sliders } from "lucide-react"
+import { GenerationProgress } from "./GenerationProgress"
 
 interface GenerationFormProps {
   onGenerate: (params: {
@@ -10,64 +11,101 @@ interface GenerationFormProps {
     flow_steps: number
     temperature: number
     cfg_scale: number
-  }) => Promise<void>
+  }) => Promise<string>
   disabled?: boolean
+  token: string
+  onGenerationComplete: () => void
 }
 
-export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
-  const [prompt, setPrompt] = useState('')
-  const [tags, setTags] = useState('')
-  const [lyrics, setLyrics] = useState('')
+export function GenerationForm({ onGenerate, disabled, token, onGenerationComplete }: GenerationFormProps) {
+  const [prompt, setPrompt] = useState("")
+  const [tags, setTags] = useState("")
+  const [lyrics, setLyrics] = useState("")
   const [duration, setDuration] = useState(30)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [flowSteps, setFlowSteps] = useState(10)
   const [temperature, setTemperature] = useState(1.0)
   const [cfgScale, setCfgScale] = useState(1.5)
-  const [loading, setLoading] = useState(false)
   const [isInstrumental, setIsInstrumental] = useState(false)
+  
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [generationError, setGenerationError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!prompt.trim()) return
+    if (!prompt.trim() || activeJobId) return
 
-    setLoading(true)
+    setGenerationError(null)
+    
     try {
-      // Build final tags: add instrumental tag if selected
       let finalTags = tags
       if (isInstrumental) {
-        const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
-        if (!tagList.includes('instrumental')) {
-          tagList.push('instrumental')
+        const tagList = tags.split(",").map(t => t.trim()).filter(Boolean)
+        if (!tagList.includes("instrumental")) {
+          tagList.push("instrumental")
         }
-        finalTags = tagList.join(',')
+        finalTags = tagList.join(",")
       }
       
-      await onGenerate({
+      const jobId = await onGenerate({
         prompt,
         tags: finalTags,
-        lyrics: isInstrumental ? '' : lyrics,
+        lyrics: isInstrumental ? "" : lyrics,
         duration_ms: duration * 1000,
         flow_steps: flowSteps,
         temperature,
         cfg_scale: cfgScale,
       })
-    } finally {
-      setLoading(false)
+      
+      setActiveJobId(jobId)
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Generation failed")
     }
   }
 
+  const handleComplete = () => {
+    setActiveJobId(null)
+    setPrompt("")
+    setTags("")
+    setLyrics("")
+    onGenerationComplete()
+  }
+
+  const handleError = (error: string) => {
+    setActiveJobId(null)
+    setGenerationError(error)
+  }
+
   const presetTags = [
-    'pop', 'rock', 'jazz', 'classical', 'electronic', 'country',
-    'polka', 'folk', 'hip-hop', 'r&b', 'metal', 'ambient',
-    'happy', 'sad', 'energetic', 'calm', 'romantic', 'piano'
+    "pop", "rock", "jazz", "classical", "electronic", "country",
+    "polka", "folk", "hip-hop", "r&b", "metal", "ambient",
+    "happy", "sad", "energetic", "calm", "romantic", "piano"
   ]
 
   const addTag = (tag: string) => {
-    const currentTags = tags.split(',').map(t => t.trim()).filter(Boolean)
+    const currentTags = tags.split(",").map(t => t.trim()).filter(Boolean)
     if (!currentTags.includes(tag)) {
-      // Use comma without space as per HeartLib format
-      setTags([...currentTags, tag].join(','))
+      setTags([...currentTags, tag].join(","))
     }
+  }
+
+  if (activeJobId) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-studio-panel rounded-lg border border-studio-border p-4">
+          <h2 className="text-lg font-semibold text-studio-text flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-studio-accent" />
+            Creating: {prompt}
+          </h2>
+          <GenerationProgress
+            jobId={activeJobId}
+            token={token}
+            onComplete={handleComplete}
+            onError={handleError}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -76,6 +114,12 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
         <Sparkles className="w-5 h-5 text-studio-accent" />
         Create New Song
       </h2>
+
+      {generationError && (
+        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">
+          {generationError}
+        </div>
+      )}
 
       <div>
         <label className="block text-sm text-studio-muted mb-1">
@@ -125,8 +169,8 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
             onClick={() => setIsInstrumental(false)}
             className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
               !isInstrumental
-                ? 'bg-studio-accent text-white border-studio-accent'
-                : 'bg-studio-bg text-studio-muted border-studio-border hover:border-studio-accent'
+                ? "bg-studio-accent text-white border-studio-accent"
+                : "bg-studio-bg text-studio-muted border-studio-border hover:border-studio-accent"
             }`}
           >
             With Vocals
@@ -136,8 +180,8 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
             onClick={() => setIsInstrumental(true)}
             className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
               isInstrumental
-                ? 'bg-studio-accent text-white border-studio-accent'
-                : 'bg-studio-bg text-studio-muted border-studio-border hover:border-studio-accent'
+                ? "bg-studio-accent text-white border-studio-accent"
+                : "bg-studio-bg text-studio-muted border-studio-border hover:border-studio-accent"
             }`}
           >
             Instrumental
@@ -188,7 +232,7 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
           className="flex items-center gap-1 text-sm text-studio-muted hover:text-studio-text transition-colors"
         >
           <Sliders className="w-4 h-4" />
-          {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+          {showAdvanced ? "Hide" : "Show"} Advanced Settings
         </button>
 
         {showAdvanced && (
@@ -254,11 +298,11 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
 
       <button
         type="submit"
-        disabled={disabled || loading || !prompt.trim()}
+        disabled={disabled || !prompt.trim()}
         className="w-full bg-studio-accent hover:bg-blue-600 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         <Sparkles className="w-5 h-5" />
-        {loading ? 'Generating...' : 'Generate Song (10 credits)'}
+        Generate Song (10 credits)
       </button>
     </form>
   )
