@@ -52,11 +52,11 @@ cd "$PROJECT_ROOT/web/backend"
 
 # Backend 1 on port 8000
 echo "  Starting backend 1 on port 8000..."
-screen -dmS heartlib-backend-1 bash -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 2>&1 | tee -a /tmp/heartlib-backend-1.log"
+screen -dmS heartlib-backend-1 bash -c "source $PROJECT_ROOT/.venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 2>&1 | tee -a /tmp/heartlib-backend-1.log"
 
 # Backend 2 on port 8001
 echo "  Starting backend 2 on port 8001..."
-screen -dmS heartlib-backend-2 bash -c "uvicorn app.main:app --host 0.0.0.0 --port 8001 2>&1 | tee -a /tmp/heartlib-backend-2.log"
+screen -dmS heartlib-backend-2 bash -c "source $PROJECT_ROOT/.venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8001 2>&1 | tee -a /tmp/heartlib-backend-2.log"
 
 # 3. Start frontend
 echo ""
@@ -66,7 +66,7 @@ cd "$PROJECT_ROOT/web/frontend"
 
 # Serve the built frontend on port 3000
 echo "  Starting frontend on port 3000..."
-screen -dmS heartlib-frontend bash -c "npx serve -s dist -l 3000 2>&1 | tee -a /tmp/heartlib-frontend.log"
+screen -dmS heartlib-frontend bash -c "export PATH=/home/ctrlh/.nvm/versions/node/v20.20.0/bin:\$PATH && npx serve -s dist -l 3000 2>&1 | tee -a /tmp/heartlib-frontend.log"
 
 # Wait a moment for services to start
 sleep 3
