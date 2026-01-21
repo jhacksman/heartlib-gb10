@@ -8,6 +8,49 @@ This document outlines the research findings and implementation paths for adding
 
 ---
 
+## SELECTED TOOLS (Final Decision)
+
+After comprehensive research and evaluation for GB10 hardware (ARM CPU + Blackwell GPU, 128GB unified memory):
+
+| Component | Selected Tool | Rationale |
+|-----------|---------------|-----------|
+| **Voice Conversion** | **YingMusic-SVC** | Latest research (Dec 2025), Flow-GRPO architecture compatible with HeartCodec, robust to harmony interference, F0-aware timbre adaptor, actively maintained |
+| **Stem Separation** | **Demucs v4 (htdemucs_ft)** | State-of-the-art quality (SDR 9.20 dB), MIT license, hybrid transformer architecture, well-tested |
+
+### Tool Comparison Summary
+
+**SVC Models Evaluated:**
+
+| Tool | Quality | VRAM | Status | Why Selected/Rejected |
+|------|---------|------|--------|----------------------|
+| **YingMusic-SVC** | Best | ~4-6GB | Active (Dec 2025) | **SELECTED** - Latest research, handles real-world audio robustly |
+| HQ-SVC | Excellent | ~4GB | Active (Nov 2025) | Backup option - efficient, also does super-resolution |
+| seed-vc | Good | 4-8GB | Archived (Nov 2025) | Proven but unmaintained |
+| RVC | Very Good | ~4-6GB | Active | Requires fine-tuning (not zero-shot) |
+| LHQ-SVC | Good | ~2GB | Research | CPU-optimized, lower quality than GPU models |
+
+**Stem Separation Models Evaluated:**
+
+| Tool | Quality | VRAM | Status | Why Selected/Rejected |
+|------|---------|------|--------|----------------------|
+| **Demucs v4 (htdemucs_ft)** | Best (SDR 9.20 dB) | ~2-4GB | Stable | **SELECTED** - State-of-the-art, MIT license |
+| Spleeter | Good | ~1-2GB | Maintained | Faster but lower quality |
+
+### VRAM Budget (Final)
+
+| Component | VRAM (FP16) |
+|-----------|-------------|
+| HeartMuLa 3B | ~6 GB |
+| HeartCodec | ~2 GB |
+| Demucs v4 | ~2-4 GB |
+| YingMusic-SVC | ~4-6 GB |
+| **Total** | **~14-18 GB** |
+| **Available (GB10)** | **128 GB** |
+
+**Headroom:** 110+ GB available for batch processing, longer audio, or parallel generations.
+
+---
+
 ## 1. Current State of HeartLib
 
 ### 1.1 Existing Architecture
@@ -136,71 +179,128 @@ Zero-shot SVC transforms vocals from a source singer to a target singer's timbre
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### Implementation Steps
+#### Implementation Steps (Using Selected Tools)
 
-1. **Integrate Demucs for Stem Separation**
+1. **Integrate Demucs v4 (htdemucs_ft) for Stem Separation**
    ```python
    # pip install demucs
-   from demucs import separate
+   import torch
+   from demucs.pretrained import get_model
+   from demucs.apply import apply_model
+   import torchaudio
    
-   def separate_stems(audio_path):
-       # Returns: vocals, drums, bass, other
-       stems = separate.main(["--two-stems", "vocals", audio_path])
-       return stems["vocals"], stems["no_vocals"]
-   ```
-
-2. **Integrate SVC Model (seed-vc recommended)**
-   ```python
-   # Clone: https://github.com/Plachtaa/seed-vc
-   from seed_vc import SeedVC
-   
-   svc_model = SeedVC.from_pretrained("seed-vc-v1")
-   
-   def convert_voice(source_vocals, reference_audio):
-       return svc_model.convert(
-           source=source_vocals,
-           reference=reference_audio,
-           pitch_shift=0  # Auto-detect
-       )
-   ```
-
-3. **Create Pipeline Wrapper**
-   ```python
-   class VoiceCloningPipeline:
-       def __init__(self, heartlib_pipeline, svc_model, demucs_model):
-           self.heartlib = heartlib_pipeline
-           self.svc = svc_model
-           self.demucs = demucs_model
+   class StemSeparator:
+       def __init__(self, device="cuda"):
+           self.model = get_model("htdemucs_ft")
+           self.model.to(device)
+           self.device = device
        
-       def generate(self, prompt, tags, lyrics, voice_reference=None):
+       def separate(self, audio_path):
+           """Separate audio into vocals and instrumental."""
+           wav, sr = torchaudio.load(audio_path)
+           wav = wav.to(self.device)
+           
+           # Apply model
+           with torch.no_grad():
+               sources = apply_model(self.model, wav[None], device=self.device)[0]
+           
+           # htdemucs_ft outputs: drums, bass, other, vocals
+           vocals = sources[3]  # vocals
+           instrumental = sources[0] + sources[1] + sources[2]  # drums + bass + other
+           
+           return vocals, instrumental, sr
+   ```
+
+2. **Integrate YingMusic-SVC for Voice Conversion**
+   ```python
+   # Clone: https://github.com/GiantAILab/YingMusic-SVC
+   import sys
+   sys.path.append("./YingMusic-SVC")
+   from inference import YingMusicSVC
+   
+   class VoiceConverter:
+       def __init__(self, device="cuda"):
+           self.model = YingMusicSVC.from_pretrained(device=device)
+           self.device = device
+       
+       def convert(self, source_vocals, reference_audio, pitch_shift=0):
+           """Convert source vocals to match reference voice timbre."""
+           return self.model.convert(
+               source=source_vocals,
+               reference=reference_audio,
+               pitch_shift=pitch_shift,
+               # YingMusic-SVC specific: F0-aware timbre adaptor
+               use_f0_adaptor=True
+           )
+   ```
+
+3. **Create Voice Cloning Pipeline**
+   ```python
+   import torchaudio
+   import torch
+   
+   class VoiceCloningPipeline:
+       def __init__(self, heartlib_pipeline, device="cuda"):
+           self.heartlib = heartlib_pipeline
+           self.stem_separator = StemSeparator(device=device)
+           self.voice_converter = VoiceConverter(device=device)
+           self.device = device
+       
+       def generate(self, prompt, tags, lyrics, voice_reference=None, 
+                    duration_ms=30000, pitch_shift=0):
+           """Generate music with optional voice cloning."""
            # Step 1: Generate with HeartLib
-           audio = self.heartlib(prompt, tags, lyrics)
+           audio = self.heartlib.generate(
+               prompt=prompt,
+               tags=tags,
+               lyrics=lyrics,
+               max_audio_length_ms=duration_ms
+           )
            
            if voice_reference is None:
                return audio
            
-           # Step 2: Separate stems
-           vocals, instrumental = self.demucs.separate(audio)
+           # Step 2: Separate stems (Demucs v4)
+           vocals, instrumental, sr = self.stem_separator.separate(audio)
            
-           # Step 3: Convert vocals
-           converted_vocals = self.svc.convert(vocals, voice_reference)
+           # Step 3: Convert vocals (YingMusic-SVC)
+           converted_vocals = self.voice_converter.convert(
+               source_vocals=vocals,
+               reference_audio=voice_reference,
+               pitch_shift=pitch_shift
+           )
            
-           # Step 4: Mix back
-           return self.mix(converted_vocals, instrumental)
+           # Step 4: Mix back with proper gain matching
+           output = self._mix_audio(converted_vocals, instrumental, sr)
+           
+           return output
+       
+       def _mix_audio(self, vocals, instrumental, sr, vocal_gain=1.0):
+           """Mix vocals and instrumental with gain control."""
+           # Normalize and mix
+           vocals = vocals * vocal_gain
+           mixed = vocals + instrumental
+           
+           # Prevent clipping
+           max_val = torch.max(torch.abs(mixed))
+           if max_val > 1.0:
+               mixed = mixed / max_val * 0.95
+           
+           return mixed, sr
    ```
 
-#### VRAM Budget (GB10)
+#### VRAM Budget (GB10) - Updated with Selected Tools
 
 | Component | VRAM (FP16) |
 |-----------|-------------|
 | HeartMuLa 3B | ~6 GB |
 | HeartCodec | ~2 GB |
-| Demucs | ~1 GB |
-| seed-vc | ~2-4 GB |
-| **Total** | **~11-13 GB** |
-| **Available** | **128 GB** |
+| Demucs v4 (htdemucs_ft) | ~2-4 GB |
+| YingMusic-SVC | ~4-6 GB |
+| **Total** | **~14-18 GB** |
+| **Available (GB10)** | **128 GB** |
 
-Plenty of headroom for concurrent processing.
+**Headroom:** 110+ GB available for batch processing, longer audio, or parallel generations.
 
 #### Pros & Cons
 
@@ -369,21 +469,29 @@ This path involves building a unified framework similar to Vevo2, with:
 
 ## 4. Recommended Implementation Plan
 
-### Phase 1: Path A (Weeks 1-2)
+### Phase 1: Path A Implementation (Weeks 1-2) - IMMEDIATE PRIORITY
 
-1. **Week 1:**
-   - Integrate Demucs for stem separation
-   - Set up seed-vc or YingMusic-SVC
-   - Create basic pipeline wrapper
-   - Add API endpoint for voice reference upload
+**Selected Tools:** YingMusic-SVC + Demucs v4 (htdemucs_ft)
 
-2. **Week 2:**
-   - Integrate into web frontend
-   - Add "Voice Reference" upload in UI
-   - Test end-to-end pipeline
-   - Optimize for latency
+1. **Week 1: Backend Integration**
+   - Clone and set up YingMusic-SVC from GitHub
+   - Install Demucs v4 via pip (`pip install demucs`)
+   - Create `VoiceCloningPipeline` wrapper class
+   - Add FastAPI endpoints for voice cloning:
+     - `POST /api/generate-with-voice` - Generate music with voice reference
+     - `POST /api/convert-voice` - Convert existing audio to target voice
+   - Test pipeline end-to-end on GB10
 
-### Phase 2: Path B Research (Weeks 3-6)
+2. **Week 2: Frontend Integration**
+   - Add "Voice Reference" upload component to web UI
+   - Implement audio preview for reference samples
+   - Add pitch shift slider (-12 to +12 semitones)
+   - Create progress indicators for multi-stage pipeline
+   - Test full user flow
+
+### Phase 2: Path B Research (Weeks 3-6) - OPTIONAL
+
+Only pursue if Path A quality is insufficient:
 
 1. **Week 3-4:**
    - Evaluate speaker encoders (ECAPA-TDNN, Resemblyzer, WavLM)
@@ -407,14 +515,14 @@ This path involves building a unified framework similar to Vevo2, with:
 
 ### SVC Models
 
-| Repository | URL | Notes |
-|------------|-----|-------|
-| seed-vc | github.com/Plachtaa/seed-vc | Archived but functional |
-| YingMusic-SVC | github.com/GiantAILab/YingMusic-SVC | Latest, robust |
-| HQ-SVC | github.com/ShawnPi233/HQ-SVC | High quality |
-| so-vits-svc-fork | github.com/voicepaw/so-vits-svc-fork | Community maintained |
+| Repository | URL | Status | Notes |
+|------------|-----|--------|-------|
+| **YingMusic-SVC** | github.com/GiantAILab/YingMusic-SVC | **SELECTED** | Latest (Dec 2025), Flow-GRPO, robust |
+| HQ-SVC | github.com/ShawnPi233/HQ-SVC | Backup | High quality, efficient |
+| seed-vc | github.com/Plachtaa/seed-vc | Archived | Proven but unmaintained |
+| so-vits-svc-fork | github.com/voicepaw/so-vits-svc-fork | Active | Requires training |
 
-### Speaker Encoders
+### Speaker Encoders (For Path B)
 
 | Model | Source | Embedding Dim |
 |-------|--------|---------------|
@@ -424,10 +532,10 @@ This path involves building a unified framework similar to Vevo2, with:
 
 ### Stem Separation
 
-| Model | URL | Quality |
-|-------|-----|---------|
-| Demucs v4 | github.com/facebookresearch/demucs | Best |
-| Spleeter | github.com/deezer/spleeter | Fast |
+| Model | URL | Status | Quality |
+|-------|-----|--------|---------|
+| **Demucs v4 (htdemucs_ft)** | github.com/facebookresearch/demucs | **SELECTED** | Best (SDR 9.20 dB) |
+| Spleeter | github.com/deezer/spleeter | Alternative | Fast but lower quality |
 
 ---
 
@@ -475,13 +583,28 @@ For live/streaming use cases:
 
 ## 8. Conclusion
 
-Voice cloning for HeartLib is highly feasible with current technology. The recommended approach is:
+Voice cloning for HeartLib is highly feasible with current technology.
 
-1. **Immediate (Path A):** Implement post-processing SVC pipeline using seed-vc or YingMusic-SVC. This provides working voice cloning in 1-2 weeks with proven quality.
+### Final Tool Selection
 
-2. **Medium-term (Path B):** Develop timbre embedding integration to leverage HeartLib's existing `muq_embed` infrastructure for cleaner, single-stage generation.
+| Component | Tool | Why |
+|-----------|------|-----|
+| **Voice Conversion** | YingMusic-SVC | Latest research (Dec 2025), Flow-GRPO compatible with HeartCodec, robust to real-world audio |
+| **Stem Separation** | Demucs v4 (htdemucs_ft) | State-of-the-art quality (SDR 9.20 dB), MIT license |
+
+### Implementation Path
+
+1. **Immediate (Path A, Weeks 1-2):** Implement post-processing SVC pipeline using **YingMusic-SVC + Demucs v4**. This provides working voice cloning with proven quality and minimal risk.
+
+2. **Optional (Path B, Weeks 3-6):** If Path A quality is insufficient, develop timbre embedding integration to leverage HeartLib's existing `muq_embed` infrastructure for cleaner, single-stage generation.
 
 3. **Long-term (Path C):** Consider full Vevo2-style integration only after validating user demand and quality requirements.
+
+### Resource Summary
+
+- **Total VRAM:** ~14-18 GB (HeartLib + Demucs + YingMusic-SVC)
+- **Available (GB10):** 128 GB unified memory
+- **Headroom:** 110+ GB for batch processing or parallel generations
 
 The GB10's 128GB unified memory provides ample headroom for running HeartLib + SVC models concurrently, making this a technically straightforward integration.
 
@@ -495,9 +618,10 @@ The GB10's 128GB unified memory provides ample headroom for running HeartLib + S
 4. arXiv:2509.15629 - The Singing Voice Conversion Challenge 2025
 5. arXiv:2502.12572 - TechSinger: Technique Controllable Multilingual Singing Voice Synthesis
 6. arXiv:2511.08496 - HQ-SVC: High-Quality Zero-Shot Singing Voice Conversion
+7. arXiv:2409.08583 - LHQ-SVC: Lightweight and High Quality Singing Voice Conversion Modeling
 
 ---
 
-*Document Version: 1.0*
+*Document Version: 2.0*
 *Last Updated: 2026-01-21*
 *Author: Devin (Research Assistant)*
