@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "heartlib-web"
+version = "0.1.0"
+description = "Web backend for HeartLib music generation with voice cloning"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+    "pydantic>=2.0.0",
+    "aiofiles>=23.2.1",
+    "python-dotenv>=1.0.0",
+    # Audio processing
+    "demucs>=4.0.0",
+    "torchaudio>=2.5.0",
+    "soundfile>=0.12.1",
+    "librosa>=0.10.0",
+    # HeartLib (installed from parent)
+    "heartlib @ file:///${PROJECT_ROOT}/../..",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "httpx>=0.25.0",
+]
+
+[tool.uv]
+extra-index-url = ["https://download.pytorch.org/whl/nightly/cu128"]
+index-strategy = "unsafe-best-match"
