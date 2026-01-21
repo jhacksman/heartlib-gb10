@@ -55,10 +55,7 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
         cfg_scale: cfgScale,
       })
       
-      // Clear form after successful submission
-      setPrompt("")
-      setTags("")
-      setLyrics("")
+      // Keep form values after submission for easy iteration on lyrics/tags
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Generation failed")
     } finally {
