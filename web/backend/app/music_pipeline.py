@@ -5,6 +5,7 @@ Wraps HeartLib for music generation with extend and crop capabilities.
 """
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -49,7 +50,7 @@ class MusicPipeline:
         temperature: float = 1.0,
         cfg_scale: float = 1.25,
         output_path: Optional[str] = None
-    ) -> torch.Tensor:
+    ) -> None:
         """
         Generate music from text prompt.
         
@@ -61,31 +62,27 @@ class MusicPipeline:
             flow_steps: Flow matching steps (quality/speed tradeoff)
             temperature: Generation temperature
             cfg_scale: Classifier-free guidance scale
-            output_path: Optional path to save output
-            
-        Returns:
-            Generated audio tensor
+            output_path: Path to save output (required - HeartLib writes directly to disk)
         """
+        if not output_path:
+            raise ValueError("output_path is required - HeartLib writes directly to disk")
+        
         inputs = {
             "prompt": prompt,
             "tags": tags,
             "lyrics": lyrics,
         }
         
+        # HeartLib's pipeline writes directly to disk via save_path and returns None
         # max_audio_length_ms must be passed as a kwarg, not in inputs dict
-        # HeartLib's _sanitize_parameters extracts it from kwargs with default 120_000ms
-        audio = self._pipeline(
+        self._pipeline(
             inputs,
             max_audio_length_ms=duration_ms,
             num_steps=flow_steps,
             temperature=temperature,
-            cfg_scale=cfg_scale
+            cfg_scale=cfg_scale,
+            save_path=output_path
         )
-        
-        if output_path:
-            self._save_audio(audio, output_path)
-        
-        return audio
     
     def extend(
         self,
@@ -98,7 +95,7 @@ class MusicPipeline:
         temperature: float = 1.0,
         cfg_scale: float = 1.25,
         output_path: Optional[str] = None
-    ) -> torch.Tensor:
+    ) -> None:
         """
         Extend a song from a specific timestamp.
         
@@ -111,11 +108,11 @@ class MusicPipeline:
             flow_steps: Flow matching steps
             temperature: Generation temperature
             cfg_scale: Classifier-free guidance scale
-            output_path: Optional path to save output
-            
-        Returns:
-            Extended audio tensor
+            output_path: Path to save output (required)
         """
+        if not output_path:
+            raise ValueError("output_path is required")
+        
         # Load source audio
         source_audio, sr = sf.read(source_path)
         if len(source_audio.shape) == 1:
@@ -127,63 +124,50 @@ class MusicPipeline:
         # Calculate sample positions
         extend_from_sample = int(extend_from_ms * sr / 1000)
         
+        # Generate new audio to a temp file (HeartLib writes directly to disk)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            temp_path = tmp.name
+        
+        try:
+            self.generate(
+                prompt=prompt,
+                duration_ms=extend_duration_ms,
+                flow_steps=flow_steps,
+                temperature=temperature,
+                cfg_scale=cfg_scale,
+                output_path=temp_path
+            )
+            
+            # Load the generated audio
+            new_audio_np, new_sr = sf.read(temp_path)
+            if len(new_audio_np.shape) == 1:
+                new_audio_np = new_audio_np.reshape(-1, 1)
+            new_audio = torch.from_numpy(new_audio_np.T).float()
+            
+            # Resample if needed
+            if new_sr != sr:
+                import torchaudio
+                new_audio = torchaudio.functional.resample(new_audio, new_sr, sr)
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        
         if direction == "before":
             # Keep audio after the timestamp, generate new audio before
             keep_audio = source_tensor[:, extend_from_sample:]
-            
-            # Generate new audio
-            new_audio = self.generate(
-                prompt=prompt,
-                duration_ms=extend_duration_ms,
-                flow_steps=flow_steps,
-                temperature=temperature,
-                cfg_scale=cfg_scale
-            )
-            
-            # Resample if needed
-            if new_audio.shape[-1] != int(extend_duration_ms * sr / 1000):
-                import torchaudio
-                new_audio = torchaudio.functional.resample(
-                    new_audio, 
-                    settings.SAMPLE_RATE, 
-                    sr
-                )
-            
             # Concatenate: new + kept
             output = torch.cat([new_audio, keep_audio], dim=-1)
-            
         else:  # direction == "after"
             # Keep audio before the timestamp, generate new audio after
             keep_audio = source_tensor[:, :extend_from_sample]
-            
-            # Generate new audio (with context from the end of kept audio)
-            new_audio = self.generate(
-                prompt=prompt,
-                duration_ms=extend_duration_ms,
-                flow_steps=flow_steps,
-                temperature=temperature,
-                cfg_scale=cfg_scale
-            )
-            
-            # Resample if needed
-            if new_audio.shape[-1] != int(extend_duration_ms * sr / 1000):
-                import torchaudio
-                new_audio = torchaudio.functional.resample(
-                    new_audio, 
-                    settings.SAMPLE_RATE, 
-                    sr
-                )
-            
             # Concatenate: kept + new
             output = torch.cat([keep_audio, new_audio], dim=-1)
         
         # Apply crossfade at the junction point
         output = self._apply_crossfade(output, extend_from_sample, sr)
         
-        if output_path:
-            self._save_audio(output, output_path, sr)
-        
-        return output
+        self._save_audio(output, output_path, sr)
     
     def _apply_crossfade(
         self, 
