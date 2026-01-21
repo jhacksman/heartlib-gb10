@@ -72,9 +72,15 @@ class MusicPipeline:
         if not output_path:
             raise ValueError("output_path is required - HeartLib writes directly to disk")
         
+        # HeartLib only uses "tags" and "lyrics" - it ignores "prompt"
+        # Merge the prompt into tags so the description influences generation
+        # Format: "prompt description, tag1, tag2, ..."
+        combined_tags = prompt.strip()
+        if tags.strip():
+            combined_tags = f"{combined_tags}, {tags.strip()}" if combined_tags else tags.strip()
+        
         inputs = {
-            "prompt": prompt,
-            "tags": tags,
+            "tags": combined_tags,
             "lyrics": lyrics,
         }
         
