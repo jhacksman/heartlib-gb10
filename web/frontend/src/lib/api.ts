@@ -208,4 +208,10 @@ export const api = {
   getDownloadUrl(songId: string): string {
     return `${API_URL}/api/songs/${songId}/download`
   },
+
+  async getAudioBlob(songId: string): Promise<Blob> {
+    const response = await fetchWithAuth(`/api/songs/${songId}/download`)
+    if (!response.ok) throw new Error('Failed to fetch audio')
+    return response.blob()
+  },
 }

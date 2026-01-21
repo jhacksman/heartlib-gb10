@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2 } from 'lucide-react'
 import { formatDuration } from '../lib/utils'
+import { api } from '../lib/api'
 
 interface AudioPlayerProps {
-  src: string | null
+  songId: string | null
   duration_ms: number
   onTimeSelect?: (timeMs: number) => void
   selectedTime?: number | null
 }
 
-export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: AudioPlayerProps) {
+export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -17,6 +18,51 @@ export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: Au
   const [duration, setDuration] = useState(duration_ms / 1000)
   const [volume, setVolume] = useState(1)
   const [isMuted, setIsMuted] = useState(false)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch audio with authentication and create blob URL
+  useEffect(() => {
+    if (!songId) {
+      setBlobUrl(null)
+      return
+    }
+
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+
+    api.getAudioBlob(songId)
+      .then(blob => {
+        if (cancelled) return
+        const url = URL.createObjectURL(blob)
+        setBlobUrl(url)
+        setIsLoading(false)
+      })
+      .catch(err => {
+        if (cancelled) return
+        console.error('Failed to load audio:', err)
+        setError('Failed to load audio')
+        setIsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+      }
+    }
+  }, [songId])
+
+  // Clean up blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+      }
+    }
+  }, [blobUrl])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -129,7 +175,7 @@ export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: Au
 
   const togglePlay = () => {
     const audio = audioRef.current
-    if (!audio || !src) return
+    if (!audio || !blobUrl) return
 
     if (isPlaying) {
       audio.pause()
@@ -166,7 +212,7 @@ export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: Au
 
   return (
     <div className="bg-studio-panel rounded-lg border border-studio-border p-4">
-      <audio ref={audioRef} src={src || undefined} />
+      <audio ref={audioRef} src={blobUrl || undefined} />
 
       <div className="mb-3">
         <canvas
@@ -183,7 +229,7 @@ export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: Au
         <div className="flex items-center gap-2">
           <button
             onClick={() => skip(-10)}
-            disabled={!src}
+            disabled={!blobUrl || isLoading}
             className="p-2 text-studio-muted hover:text-studio-text disabled:opacity-50 transition-colors"
             title="Skip back 10s"
           >
@@ -192,15 +238,21 @@ export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: Au
 
           <button
             onClick={togglePlay}
-            disabled={!src}
+            disabled={!blobUrl || isLoading}
             className="p-3 bg-studio-accent hover:bg-blue-600 text-white rounded-full disabled:opacity-50 transition-colors"
           >
-            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="w-5 h-5" />
+            ) : (
+              <Play className="w-5 h-5 ml-0.5" />
+            )}
           </button>
 
           <button
             onClick={() => skip(10)}
-            disabled={!src}
+            disabled={!blobUrl || isLoading}
             className="p-2 text-studio-muted hover:text-studio-text disabled:opacity-50 transition-colors"
             title="Skip forward 10s"
           >
@@ -231,7 +283,13 @@ export function AudioPlayer({ src, duration_ms, onTimeSelect, selectedTime }: Au
         </div>
       </div>
 
-      {onTimeSelect && (
+      {error && (
+        <p className="text-xs text-red-500 mt-2 text-center">
+          {error}
+        </p>
+      )}
+
+      {onTimeSelect && !error && (
         <p className="text-xs text-studio-muted mt-2 text-center">
           Shift+Click on waveform to select time for extend/crop
         </p>

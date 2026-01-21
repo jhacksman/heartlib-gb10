@@ -7,8 +7,6 @@ import { SongList } from './components/SongList'
 import { AudioPlayer } from './components/AudioPlayer'
 import { SongActions } from './components/SongActions'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-
 function App() {
   const [user, setUser] = useState<User | null>(null)
   const [songs, setSongs] = useState<Song[]>([])
@@ -189,7 +187,7 @@ function App() {
               </div>
 
               <AudioPlayer
-                src={selectedSong.output_url ? `${API_URL}${selectedSong.output_url}` : null}
+                songId={selectedSong.status === 'completed' && selectedSong.output_url ? selectedSong.id : null}
                 duration_ms={selectedSong.duration_ms}
                 onTimeSelect={setSelectedTimeMs}
                 selectedTime={selectedTimeMs}
