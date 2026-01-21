@@ -1,24 +1,12 @@
 import { Music, Clock, Loader2, CheckCircle, XCircle, Trash2, ListOrdered } from 'lucide-react'
 import { formatDuration } from '../lib/utils'
-
-interface Song {
-  id: string
-  name: string
-  prompt: string
-  tags: string
-  duration_ms: number
-  status: string
-  progress: number
-  message: string
-  output_url: string | null
-  created_at: string
-}
+import { Song } from '../lib/api'
 
 interface SongListProps {
   songs: Song[]
   selectedSongId: string | null
   onSelectSong: (song: Song) => void
-  onDeleteSong: (songId: string) => void
+  onDeleteSong: (songId: string, backendUrl?: string) => void
 }
 
 export function SongList({ songs, selectedSongId, onSelectSong, onDeleteSong }: SongListProps) {
@@ -83,6 +71,11 @@ export function SongList({ songs, selectedSongId, onSelectSong, onDeleteSong }: 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   {getStatusIcon(song.status)}
+                  {song.version && (
+                    <span className="px-1.5 py-0.5 text-xs font-bold bg-studio-accent/30 text-studio-accent rounded">
+                      {song.version}
+                    </span>
+                  )}
                   <span className="font-medium text-studio-text truncate">
                     {song.name}
                   </span>
@@ -131,7 +124,7 @@ export function SongList({ songs, selectedSongId, onSelectSong, onDeleteSong }: 
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  onDeleteSong(song.id)
+                  onDeleteSong(song.id, song.backendUrl)
                 }}
                 className="p-1.5 text-studio-muted hover:text-red-400 transition-colors"
                 title="Delete song"

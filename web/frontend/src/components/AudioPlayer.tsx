@@ -8,6 +8,7 @@ interface AudioPlayerProps {
   duration_ms: number
   onTimeSelect?: (timeMs: number) => void
   selectedTime?: number | null
+  backendUrl?: string
 }
 
 // Extract waveform peaks from audio buffer
@@ -33,7 +34,7 @@ function extractWaveformPeaks(audioBuffer: AudioBuffer, numPeaks: number): numbe
   return peaks.map(p => p / maxPeak)
 }
 
-export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }: AudioPlayerProps) {
+export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime, backendUrl }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -59,7 +60,7 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
     setIsLoading(true)
     setError(null)
 
-    api.getAudioBlob(songId)
+    api.getAudioBlob(songId, backendUrl)
       .then(async blob => {
         if (cancelled) return
         
@@ -97,7 +98,7 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
         URL.revokeObjectURL(blobUrl)
       }
     }
-  }, [songId])
+  }, [songId, backendUrl])
 
   // Clean up blob URL on unmount
   useEffect(() => {

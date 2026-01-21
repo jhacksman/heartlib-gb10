@@ -84,7 +84,8 @@ function App() {
     try {
       const response = await api.generateSong(params)
       await loadSongs()
-      return response.job_id
+      // Return the first job ID (for compatibility)
+      return response.job_ids[0]?.job_id || ''
     } catch (error) {
       console.error("Generation failed:", error)
       throw error
@@ -126,11 +127,11 @@ function App() {
     }
   }
 
-  const handleDeleteSong = async (songId: string) => {
+  const handleDeleteSong = async (songId: string, backendUrl?: string) => {
     if (!confirm("Are you sure you want to delete this song?")) return
 
     try {
-      await api.deleteSong(songId)
+      await api.deleteSong(songId, backendUrl)
       if (selectedSong?.id === songId) {
         setSelectedSong(null)
       }
@@ -184,6 +185,7 @@ function App() {
                 duration_ms={selectedSong.duration_ms}
                 onTimeSelect={setSelectedTimeMs}
                 selectedTime={selectedTimeMs}
+                backendUrl={selectedSong.backendUrl}
               />
 
               {selectedSong.status === "completed" && selectedSong.output_url && (
@@ -191,11 +193,12 @@ function App() {
                   songId={selectedSong.id}
                   songName={selectedSong.name}
                   durationMs={selectedSong.duration_ms}
-                  downloadUrl={api.getDownloadUrl(selectedSong.id)}
+                  downloadUrl={api.getDownloadUrl(selectedSong.id, selectedSong.backendUrl)}
                   selectedTimeMs={selectedTimeMs}
                   onExtend={handleExtend}
                   onCrop={handleCrop}
                   authToken={getAuthToken()}
+                  backendUrl={selectedSong.backendUrl}
                 />
               )}
             </>
