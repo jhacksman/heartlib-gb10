@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import os
 from dataclasses import dataclass
 from tqdm import tqdm
-import torchaudio
+import soundfile as sf
 import json
 from transformers import BitsAndBytesConfig
 
@@ -203,7 +203,10 @@ class HeartMuLaGenPipeline(Pipeline):
 
     def postprocess(self, model_outputs: Dict[str, Any], save_path: str):
         wav = model_outputs["wav"]
-        torchaudio.save(save_path, wav, 48000)
+        # Use soundfile instead of torchaudio to avoid torchcodec dependency on DGX Spark
+        # soundfile expects (samples, channels) format, wav tensor is (channels, samples)
+        wav_np = wav.cpu().numpy().T
+        sf.write(save_path, wav_np, 48000)
 
     @classmethod
     def from_pretrained(
