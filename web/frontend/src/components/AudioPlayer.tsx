@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Loader2 } from 'lucide-react'
 import { formatDuration } from '../lib/utils'
 import { api } from '../lib/api'
@@ -10,9 +10,33 @@ interface AudioPlayerProps {
   selectedTime?: number | null
 }
 
+// Extract waveform peaks from audio buffer
+function extractWaveformPeaks(audioBuffer: AudioBuffer, numPeaks: number): number[] {
+  const channelData = audioBuffer.getChannelData(0) // Use first channel
+  const samplesPerPeak = Math.floor(channelData.length / numPeaks)
+  const peaks: number[] = []
+
+  for (let i = 0; i < numPeaks; i++) {
+    const start = i * samplesPerPeak
+    const end = Math.min(start + samplesPerPeak, channelData.length)
+    
+    let max = 0
+    for (let j = start; j < end; j++) {
+      const abs = Math.abs(channelData[j])
+      if (abs > max) max = abs
+    }
+    peaks.push(max)
+  }
+
+  // Normalize peaks to 0-1 range
+  const maxPeak = Math.max(...peaks, 0.01)
+  return peaks.map(p => p / maxPeak)
+}
+
 export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(duration_ms / 1000)
@@ -21,11 +45,13 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([])
 
-  // Fetch audio with authentication and create blob URL
+  // Fetch audio with authentication, create blob URL, and extract waveform
   useEffect(() => {
     if (!songId) {
       setBlobUrl(null)
+      setWaveformPeaks([])
       return
     }
 
@@ -34,10 +60,28 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
     setError(null)
 
     api.getAudioBlob(songId)
-      .then(blob => {
+      .then(async blob => {
         if (cancelled) return
+        
         const url = URL.createObjectURL(blob)
         setBlobUrl(url)
+        
+        // Decode audio to extract waveform
+        try {
+          if (!audioContextRef.current) {
+            audioContextRef.current = new AudioContext()
+          }
+          const arrayBuffer = await blob.arrayBuffer()
+          const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer)
+          const peaks = extractWaveformPeaks(audioBuffer, 100)
+          if (!cancelled) {
+            setWaveformPeaks(peaks)
+          }
+        } catch (err) {
+          console.error('Failed to decode audio for waveform:', err)
+          // Fall back to empty waveform (will show placeholder)
+        }
+        
         setIsLoading(false)
       })
       .catch(err => {
@@ -85,9 +129,9 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
 
   useEffect(() => {
     drawWaveform()
-  }, [currentTime, selectedTime, duration])
+  }, [currentTime, selectedTime, duration, waveformPeaks])
 
-  const drawWaveform = () => {
+  const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -101,7 +145,7 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
     ctx.fillStyle = '#22262e'
     ctx.fillRect(0, 0, width, height)
 
-    // Draw waveform bars (simulated)
+    // Draw waveform bars
     const barCount = 100
     const barWidth = width / barCount - 1
     const barGap = 1
@@ -109,9 +153,17 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
     for (let i = 0; i < barCount; i++) {
       const x = i * (barWidth + barGap)
       
-      // Generate pseudo-random height based on position
-      const seed = Math.sin(i * 0.5) * Math.cos(i * 0.3) + Math.sin(i * 0.1)
-      const barHeight = Math.abs(seed) * 0.6 * height + height * 0.1
+      // Use real waveform peaks if available, otherwise use placeholder
+      let barHeight: number
+      if (waveformPeaks.length > 0) {
+        // Real waveform from audio data
+        const peakIndex = Math.min(i, waveformPeaks.length - 1)
+        barHeight = waveformPeaks[peakIndex] * 0.8 * height + height * 0.05
+      } else {
+        // Placeholder: generate pseudo-random height based on position
+        const seed = Math.sin(i * 0.5) * Math.cos(i * 0.3) + Math.sin(i * 0.1)
+        barHeight = Math.abs(seed) * 0.6 * height + height * 0.1
+      }
 
       const progress = currentTime / duration
       const isPlayed = i / barCount <= progress
@@ -151,7 +203,7 @@ export function AudioPlayer({ songId, duration_ms, onTimeSelect, selectedTime }:
       ctx.closePath()
       ctx.fill()
     }
-  }
+  }, [currentTime, duration, selectedTime, waveformPeaks])
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
