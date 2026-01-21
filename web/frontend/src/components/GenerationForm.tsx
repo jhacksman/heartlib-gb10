@@ -57,8 +57,9 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
   }
 
   const presetTags = [
-    'synthwave', 'pop', 'rock', 'jazz', 'classical', 'electronic',
-    'ambient', 'hip-hop', 'folk', 'indie', 'metal', 'r&b'
+    'pop', 'rock', 'jazz', 'classical', 'electronic', 'country',
+    'polka', 'folk', 'hip-hop', 'r&b', 'metal', 'ambient',
+    'happy', 'sad', 'energetic', 'calm', 'romantic', 'piano'
   ]
 
   const addTag = (tag: string) => {
@@ -79,26 +80,29 @@ export function GenerationForm({ onGenerate, disabled }: GenerationFormProps) {
       <div>
         <label className="block text-sm text-studio-muted mb-1">
           <Music className="w-4 h-4 inline mr-1" />
-          Describe your song
+          Song Name
         </label>
-        <textarea
+        <input
+          type="text"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="A dreamy synthwave track with pulsing bass and ethereal vocals..."
-          rows={3}
-          className="w-full bg-studio-bg border border-studio-border rounded-lg p-3 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent resize-none"
+          placeholder="My Awesome Track"
+          className="w-full bg-studio-bg border border-studio-border rounded-lg p-2 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent"
         />
       </div>
 
       <div>
-        <label className="block text-sm text-studio-muted mb-1">Style Tags</label>
+        <label className="block text-sm text-studio-muted mb-1">
+          Style Tags (controls the music style)
+        </label>
         <input
           type="text"
           value={tags}
           onChange={(e) => setTags(e.target.value)}
-          placeholder="synthwave, 120bpm, female vocals"
+          placeholder="polka,happy,accordion"
           className="w-full bg-studio-bg border border-studio-border rounded-lg p-2 text-studio-text placeholder-studio-muted focus:outline-none focus:border-studio-accent"
         />
+        <p className="text-xs text-studio-muted mt-1">Use short keywords separated by commas (e.g., polka,happy,accordion)</p>
         <div className="flex flex-wrap gap-1 mt-2">
           {presetTags.map((tag) => (
             <button
