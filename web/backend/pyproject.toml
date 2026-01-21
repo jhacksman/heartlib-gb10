@@ -16,8 +16,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     # Audio processing
     "demucs>=4.0.0",
-    # Note: torchaudio should be installed separately from NVIDIA's index for DGX Spark
-    # Do not pin version here - let users install from pypi.nvidia.com
+    "torchaudio",  # No version pin - allows NVIDIA's ARM64 builds for DGX Spark
     "soundfile>=0.12.1",
     "librosa>=0.10.0",
     "pydub>=0.25.1",  # For MP3 export (requires ffmpeg)
@@ -32,5 +31,8 @@ dev = [
 ]
 
 [tool.uv]
-extra-index-url = ["https://download.pytorch.org/whl/nightly/cu128"]
+extra-index-url = [
+    "https://pypi.nvidia.com",  # NVIDIA's ARM64 builds for DGX Spark
+    "https://download.pytorch.org/whl/nightly/cu128"
+]
 index-strategy = "unsafe-best-match"
