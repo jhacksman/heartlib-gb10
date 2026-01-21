@@ -27,13 +27,56 @@ from .config import settings
 # Storage for generated files
 UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("outputs")
+DATA_DIR = Path("data")
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
-# In-memory storage (for MVP - would use SQLite with volume for production)
+# Shared storage files (for multi-backend support)
+USERS_FILE = DATA_DIR / "users.json"
+SESSIONS_FILE = DATA_DIR / "sessions.json"
+
+# In-memory storage for jobs (per-backend, not shared)
 jobs: dict = {}
-users: dict = {}
-sessions: dict = {}
+
+
+def load_users() -> dict:
+    """Load users from shared file."""
+    if USERS_FILE.exists():
+        try:
+            with open(USERS_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+
+def save_users(users_data: dict):
+    """Save users to shared file."""
+    with open(USERS_FILE, 'w') as f:
+        json.dump(users_data, f)
+
+
+def load_sessions() -> dict:
+    """Load sessions from shared file."""
+    if SESSIONS_FILE.exists():
+        try:
+            with open(SESSIONS_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+
+def save_sessions(sessions_data: dict):
+    """Save sessions to shared file."""
+    with open(SESSIONS_FILE, 'w') as f:
+        json.dump(sessions_data, f)
+
+
+# Load initial data
+users: dict = load_users()
+sessions: dict = load_sessions()
 
 # Security
 security = HTTPBearer(auto_error=False)
@@ -100,12 +143,17 @@ def create_token() -> str:
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Optional[dict]:
+    global users, sessions
     if not credentials:
         return None
     token = credentials.credentials
+    # Reload sessions from file to pick up sessions from other backends
+    sessions = load_sessions()
     if token not in sessions:
         return None
     user_id = sessions[token]
+    # Reload users from file to pick up users from other backends
+    users = load_users()
     return users.get(user_id)
 
 
@@ -191,6 +239,9 @@ async def health():
 @app.post("/api/auth/signup", response_model=AuthResponse)
 async def signup(data: UserCreate):
     """Create a new user account."""
+    global users, sessions
+    # Reload users to check for existing email
+    users = load_users()
     if any(u["email"] == data.email for u in users.values()):
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -204,9 +255,12 @@ async def signup(data: UserCreate):
         "created_at": datetime.utcnow().isoformat()
     }
     users[user_id] = user
+    save_users(users)
     
     token = create_token()
+    sessions = load_sessions()  # Reload to avoid overwriting other sessions
     sessions[token] = user_id
+    save_sessions(sessions)
     
     return AuthResponse(
         token=token,
@@ -222,6 +276,9 @@ async def signup(data: UserCreate):
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login(data: UserLogin):
     """Login with email and password."""
+    global users, sessions
+    # Reload users from shared file
+    users = load_users()
     user = None
     for u in users.values():
         if u["email"] == data.email and u["password_hash"] == hash_password(data.password):
@@ -232,7 +289,9 @@ async def login(data: UserLogin):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     token = create_token()
+    sessions = load_sessions()  # Reload to avoid overwriting other sessions
     sessions[token] = user["id"]
+    save_sessions(sessions)
     
     return AuthResponse(
         token=token,
@@ -248,8 +307,11 @@ async def login(data: UserLogin):
 @app.post("/api/auth/logout")
 async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Logout and invalidate token."""
+    global sessions
+    sessions = load_sessions()
     if credentials and credentials.credentials in sessions:
         del sessions[credentials.credentials]
+        save_sessions(sessions)
     return {"status": "logged out"}
 
 
