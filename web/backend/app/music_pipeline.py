@@ -34,8 +34,10 @@ class MusicPipeline:
         """Load HeartLib pipeline."""
         try:
             from heartlib import HeartMuLaGenPipeline
+            model_path = settings.MODEL_PATH
+            print(f"Loading HeartLib from: {model_path}")
             self._pipeline = HeartMuLaGenPipeline.from_pretrained(
-                "/home/ctrlh/heartlib/ckpt",
+                model_path,
                 device=self.device,
                 dtype=torch.bfloat16,
                 version="3B"
