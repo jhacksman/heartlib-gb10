@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     # Pipeline settings
     ENABLE_PIPELINE: bool = True
     
-    # HeartLib model paths (optional, uses defaults if not set)
+    # HeartLib model path - defaults to ./ckpt relative to project root
+    # Can be overridden via MODEL_PATH environment variable
+    MODEL_PATH: str = "./ckpt"
+    
+    # Legacy paths (kept for backwards compatibility)
     HEARTMULA_MODEL_PATH: str = ""
     HEARTCODEC_MODEL_PATH: str = ""
     
