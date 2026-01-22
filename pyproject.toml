@@ -13,7 +13,7 @@ authors = [
     {name = "HeartMuLa Team", email = "heartmula.ai@gmail.com"}
 ]
 dependencies = [
-    "numpy>=2.0.2",
+    "numpy>=1.24.0,<2.0.0",  # pyarrow 14.x requires numpy 1.x
     "tqdm>=4.67.1",
     "traitlets>=5.7.1",
     "traittypes>=0.2.3",
