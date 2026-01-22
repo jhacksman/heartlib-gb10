@@ -33,6 +33,9 @@ dependencies = [
     "datasets>=2.14.0",
     # Triton for PyTorch optimizations (no version pin for ARM64 compatibility)
     "triton",
+    # PyTorch - sourced from NVIDIA's index for ARM64 CUDA support (see [tool.uv.sources])
+    "torch",
+    "torchaudio",
 ]
 urls = { "homepage" = "https://heartmula.github.io/" }
 classifiers = [
@@ -47,8 +50,19 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.uv]
-extra-index-url = [
-    "https://pypi.nvidia.com",  # NVIDIA's ARM64 builds for DGX Spark
-    "https://download.pytorch.org/whl/nightly/cu128"
-]
 index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/nightly/cu128"
+
+[tool.uv.sources]
+# Force torch packages to come from NVIDIA's index for ARM64 CUDA support
+torch = { index = "nvidia" }
+torchaudio = { index = "nvidia" }
+torchvision = { index = "nvidia" }
